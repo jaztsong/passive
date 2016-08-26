@@ -39,19 +39,20 @@ class Line_cont
         public:
                 enum Fields{
                         F_TIME = 0,
-                        F_LEN = 1,
-                        F_TA = 2,
-                        F_RA = 3,
-                        F_TYPE_SUBTYPE = 4,
-                        F_DS = 5,
-                        F_RETRY = 6,
-                        F_RSSI = 7,
-                        F_FREQ = 8,
-                        F_RATE = 9,
-                        F_NAV = 10,
-                        F_AMPDU_KNOWN = 11,
-                        F_AMPDU_LAST = 12,
-                        F_AMPDU_REF = 13
+                        F_TIME_DELTA = 1,
+                        F_LEN = 2,
+                        F_TA = 3,
+                        F_RA = 4,
+                        F_TYPE_SUBTYPE = 5,
+                        F_DS = 6,
+                        F_RETRY = 7,
+                        F_RSSI = 8,
+                        F_FREQ = 9,
+                        F_RATE = 10,
+                        F_NAV = 11,
+                        F_AMPDU_KNOWN = 12,
+                        F_AMPDU_LAST = 13,
+                        F_AMPDU_REF = 14
                 };
 
                 Line_cont (std::string);
@@ -59,6 +60,7 @@ class Line_cont
                 std::string get_field(Fields);
                 void print_fields();
                 double getTime();
+                Line_cont* next_line;
 
         private:
                 double mTime;
@@ -101,11 +103,15 @@ public:
         uint32_t getPacketN();
         std::vector<Line_cont*>* getPkts();
         void calc_Airtime();
+        void go_calc();
+        void report();
+        void setTime(double);
 
 private:
         /* data */
         std::string mAddr;
         float mAirTime;
+        double mTime;
         std::vector<Line_cont*> mPackets;
 
 

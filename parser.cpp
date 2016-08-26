@@ -24,6 +24,7 @@ void Parser::start()
         double pre_Time = 0.0;
         //TODO: Add time order check!! For Lixing Wed 24 Aug 2016 11:28:12 AM EDT.
         
+        Line_cont* pre_line = NULL;
         while(getline(infile, line))
         {
                 string line_value;
@@ -68,12 +69,20 @@ void Parser::start()
                                 assert(mStartTime == t_window_data->getTime());
                                 t_window_data->addData(line_c);
                         }
+                        if(pre_line != NULL){
+                                pre_line->next_line = line_c;
+                        }
+
+
+                        pre_line = line_c;
 
                         pre_Time = mStartTime;
                         /* D(" Index "<<setprecision(15)<<line_c->getTime()<<" "<<getIndex(line_c)); */
 
                 }
         }
+        t_window_data->parse();
+        mWindow_datas.push_back(t_window_data);
 
 }
 
@@ -116,6 +125,7 @@ bool Parser::is_in_range(string s)
 Line_cont::Line_cont(string t)
 {
         mTime=atof(t.c_str());
+        next_line = NULL;
 }
 
 void Line_cont::read_field(string s, uint8_t index)
@@ -166,9 +176,11 @@ void Window_data::parse()
         D("Total Number of APs is "<<mAPs.size());
         assignData();
         for(map<string,AP_stat*>::iterator it = mAPs.begin();it != mAPs.end();++it){
+                ( it->second )->setTime(this->getTime());
                 D(( it->first )<<" has "<<( it->second )->getPacketN()<<" pkts");
-                ( it->second )->calc_Airtime();
+                ( it->second )->go_calc();
                 D(( it->first )<<" has "<<( it->second )->getAirTime()<<" ms");
+                ( it->second )->report();
         }
         /* D("Check the Other packets "); */
         /* vector<Line_cont*>* tPkts = mAPs["Other"]->getPkts(); */
@@ -221,7 +233,7 @@ void Window_data::assignData()
         for(vector<Line_cont*>::iterator it=mLines.begin(); it != mLines.end();++it ){
                 string ta_addr = (*it)->get_field(Line_cont::F_TA);
                 ta_addr = ta_addr.substr(0,ADD_LEN);
-                string ra_addr = (*it)->get_field(Line_cont::F_TA);
+                string ra_addr = (*it)->get_field(Line_cont::F_RA);
                 ra_addr = ra_addr.substr(0,ADD_LEN);
                 if(mAPs.find(ta_addr) != mAPs.end()){
                         mAPs[ta_addr]->addPacket(*it);
@@ -289,7 +301,6 @@ vector<Line_cont*>* AP_stat::getPkts()
 void AP_stat::calc_Airtime()
 {
 
-        double pre_t = 0;
         for(vector<Line_cont* >::iterator it = mPackets.begin(); it != mPackets.end();++it){
                 string s_byte = (*it)->get_field(Line_cont::F_LEN);
                 uint16_t t_bits = atoi(s_byte.c_str())*8;
@@ -299,18 +310,51 @@ void AP_stat::calc_Airtime()
 
                 string s_rate = (*it)->get_field(Line_cont::F_RATE);
                 // in bits / ms
-                double t_rate = atoi(s_rate.c_str())*1000;
-                D(setprecision(16)<<(*it)->getTime()<<" NAV:"<<t_nav
-                                <<" GAP: "<<( (*it)->getTime() - pre_t )*1000
-                                <<" bit/rate: "<<t_bits/t_rate);
+                double t_rate = atof(s_rate.c_str())*1000;
 
-                mAirTime += max(min(t_nav,( (*it)->getTime() - pre_t )*1000),t_bits/t_rate);
+                string s_next_delta = "1000.0";
+                if((*it)->next_line != NULL){
+                        s_next_delta = (*it)->next_line->get_field(Line_cont::F_TIME_DELTA);
+                }
+                double t_next_delta = atof(s_next_delta.c_str())*1000;
 
-                pre_t = (*it)->getTime();
+                string s_pre_delta = (*it)->get_field(Line_cont::F_TIME_DELTA);
+                double t_pre_delta = atof(s_pre_delta.c_str())*1000;
+                /* D(setprecision(16)<<" read field "<<s_pre_delta<<" double "<<t_pre_delta); */
+
+                double t_inc =0.0;
+                if(t_nav > 0){
+                        t_inc = t_bits/t_rate + 
+                                min(t_nav,t_next_delta);
+                }else{
+                        t_inc = min(t_pre_delta,t_bits/t_rate);
+                }
+                mAirTime += t_inc;
+
+                /* D(setprecision(16)<<(*it)->getTime()<<"Airtime= "<< */
+                /*                 t_inc */
+                /*                 <<" NAV:"<<t_nav */
+                /*                 <<" NEXT: "<<t_next_delta */
+                /*                 <<" PRE: "<<t_pre_delta */
+                /*                 <<" bit/rate: "<<t_bits/t_rate); */
                     
         }
 }
 
+void AP_stat::setTime(double t)
+{
+        mTime = t;
+}
+
+void AP_stat::go_calc()
+{
+        this->calc_Airtime();
+}
+
+void AP_stat::report()
+{
+        printf("%f %s %d %f\n",mTime,mAddr.c_str(),this->getPacketN(),mAirTime);
+}
 
 
 

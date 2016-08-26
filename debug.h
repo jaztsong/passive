@@ -1,6 +1,6 @@
 #include <iostream>
 #include <iomanip>
-#define DEBUG
+/* #define DEBUG */
 
 #ifdef DEBUG
 #define D(msg) do {\
