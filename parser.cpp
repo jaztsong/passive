@@ -17,7 +17,7 @@ void Parser::config(char* argv[], uint8_t l)
 
 void Parser::start()
 {
-        ifstream infile(mName.c_str());
+        ifstream infile(( mName + ".csv" ).c_str());
         string line;
         bool first=true;
         Window_data* t_window_data = NULL;

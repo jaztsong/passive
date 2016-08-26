@@ -10,6 +10,7 @@
 #include <assert.h>     
 
 #define ADD_LEN 16
+#define SCRIPT "/home/netscale/A-MPDU/src/Passive/scripts/parse_pcap.sh "
 class Line_cont;
 class Window_data;
 class Parser

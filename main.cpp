@@ -12,9 +12,14 @@ int main(int argc, char* argv[])
                 " period"<< std::endl;
         return 1;
     }
+    //call the script
+    stringstream cmd;
+    cmd<<SCRIPT<<string( argv[1] )<<">"<<string( argv[1] )<<".csv";
+    system(cmd.str().c_str());
     Parser* parser = new Parser(string(argv[1]));
     parser->config(argv+2,3);
     parser->start();
 
     return 0;
 }
+
