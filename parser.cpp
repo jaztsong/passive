@@ -247,16 +247,16 @@ void Window_data::assignData()
 }
 bool Window_data::is_downlink(Line_cont* l)
 {
-       return ( l->get_field(Line_cont::F_DS) == "2" ); 
+       return ( l->get_field(Line_cont::F_DS) == "2" ) || ( l->get_field(Line_cont::F_DS) == "0x02" ); 
 }
 
 bool Window_data::is_uplink(Line_cont* l)
 {
-       return ( l->get_field(Line_cont::F_DS) == "1" ); 
+       return ( l->get_field(Line_cont::F_DS) == "1" ) || ( l->get_field(Line_cont::F_DS) == "0x01" ); 
 }
 bool Window_data::is_beacon(Line_cont* l)
 {
-       return ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "8" ); 
+       return ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "8" ) || ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "0x08" ); 
 }
 /* string Window_data::getAP(Line_cont* l) */
 /* { */
