@@ -324,7 +324,7 @@ void AP_stat::calc_Airtime()
 
                 double t_inc =0.0;
                 if(t_nav > 0){
-                        t_inc =  min(t_nav,t_next_delta);
+                        t_inc =  t_bits/t_rate + min(t_nav,t_next_delta);
                 }else{
                         t_inc = min(t_pre_delta,t_bits/t_rate);
                 }
