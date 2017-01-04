@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sys/stat.h>
 #include "parser.h"
 
 using namespace std;
@@ -13,13 +14,19 @@ int main(int argc, char* argv[])
         return 1;
     }
     //call the script
-    stringstream cmd;
-    cmd<<SCRIPT<<string( argv[1] )<<">"<<string( argv[1] )<<".csv";
-    system(cmd.str().c_str());
-    Parser* parser = new Parser(string(argv[1]));
-    parser->config(argv+2,3);
-    parser->start();
+    struct stat buffer;   
+    if ((stat (( argv[1] ), &buffer) == 0)){
 
+            stringstream cmd;
+            cmd<<SCRIPT<<string( argv[1] )<<">"<<string( argv[1] )<<".csv";
+
+            system(cmd.str().c_str());
+            Parser* parser = new Parser(string(argv[1]));
+            parser->config(argv+2,3);
+            parser->start();
+    }else{
+            cerr<<"**ERROR: No file "<<argv[1]<<" exsist"<<endl;
+    }
     return 0;
 }
 
