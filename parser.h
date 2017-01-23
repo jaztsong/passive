@@ -11,8 +11,10 @@
 #include <math.h> 
 #include <algorithm>
 #include <bitset>
+#include <tuple>
+#include <queue>
 
-#define ADD_LEN 16
+#define ADD_LEN 17
 #define SCRIPT "/home/netscale/A-MPDU/src/Passive/scripts/parse_pcap.sh "
 #define OVERHEAD_PREAMBLE_S 28
 #define OVERHEAD_PREAMBLE_L 40
@@ -27,6 +29,7 @@
 //2 is the full version that output all
 //
 #define MTU 1500
+#define ACK_LEN 120
 
 class Line_cont;
 class Window_data;
@@ -124,8 +127,10 @@ class BlkACK {
         public:
                 BlkACK(Line_cont*);
                 std::string addr;
+                bool addr_rev;
                 Line_cont* line;
                 uint16_t SSN;
+                int RSSI;
                 std::vector<uint16_t> Miss;
 };
 class BlkACK_stat;
@@ -165,6 +170,7 @@ private:
         uint16_t m_nUPs;
         uint16_t m_nDowns;
         std::map<std::string,BlkACK_stat*> mBlkACKs;
+        std::queue<Line_cont*> m_queue_blockACKreq;
 
 
         std::vector<Line_cont*> mPackets;
@@ -178,7 +184,7 @@ private:
         bool is_data(Line_cont*);
         bool is_downlink(Line_cont*);
         bool is_beacon_or_PR(Line_cont*);
-        void getBAMPDU_stat();
+        void getBAMPDU_stats();
         BlkACK parse_blkack(Line_cont*);
 
 };
@@ -189,15 +195,27 @@ class BlkACK_stat
                 BlkACK_stat (std::string,AP_stat*);
                 std::string getAddr();
                 void addACK(BlkACK*);
-                std::vector<uint16_t> mBAMPDUs;
-                void parse_AMPDU();
+                std::vector<std::tuple<uint16_t,uint16_t,int,float,bool> > mAMPDU_tuple;
+                bool parse_AMPDU();
+                float getAMPDU_mean();
+                uint16_t getMPDU_num();
+                void setPktSize(uint16_t);
+                void calc_stats();
 
         private:
                 std::string mAddr;
                 AP_stat* mAP_stat;
                 std::vector<BlkACK*> mACKs;
                 std::vector<uint16_t> mLoss;
-                std::vector<uint16_t> set_diff(std::vector<uint16_t>&,std::vector<uint16_t>&);
+                int set_diff(std::vector<uint16_t>&,std::vector<uint16_t>&);
+                float mRSSI_mean;
+                float mAMPDU_mean;
+                float mAMPDU_std;
+                float mTime_delta;
+                uint16_t mAMPDU_max;
+                uint16_t mMPDU_num;
+                uint16_t mPkt_Size;
+                uint16_t mFREQ;
                 /* data */
 
 

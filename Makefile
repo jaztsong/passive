@@ -3,7 +3,7 @@ ALL = passive
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -g -Wall
+CXXFLAGS = -g -Wall -std=gnu++11
 LFLAGS = 
 
 LIBS =
