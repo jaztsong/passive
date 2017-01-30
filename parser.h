@@ -13,6 +13,8 @@
 #include <bitset>
 #include <tuple>
 #include <queue>
+#include <set>
+#include "float.h"
 
 #define ADD_LEN 17
 #define SCRIPT "/home/netscale/A-MPDU/src/Passive/scripts/parse_pcap.sh "
@@ -20,6 +22,7 @@
 #define OVERHEAD_PREAMBLE_L 40
 #define BACKOFF_CW 15
 #define SLOT_TIME 9
+#define MAX_TRANS_TIME 4 //in millisecond
 //Let's put the weight to zero for now.
 #define WEIGHT 0.0
 #define BITMAP_LEN 64
@@ -104,12 +107,14 @@ class Window_data
 
                 void addData(Line_cont*);
                 void parse();
+                void report_channel();
                 double getTime();
                 Parser* getParser();
                 void setParser(Parser*);
         private:
                 std::vector<Line_cont*> mLines;
                 std::map<std::string, AP_stat*> mAPs;
+                std::vector<Line_cont*> mOtherAP_pkts;
                 Parser* mParser;
                 double  mTime;
                 void getAP_pool();
@@ -117,8 +122,15 @@ class Window_data
                 bool is_downlink(Line_cont*);
                 bool is_uplink(Line_cont*);
                 bool is_beacon_or_PR(Line_cont*);
+                void Analyse_OtherAP();
 
                 /* data */
+                float mUtil;
+                float mAirtime;
+                float mLoss;
+                uint16_t mN_client;
+                uint16_t mN_AP;
+
 
 };
 
@@ -133,6 +145,7 @@ class BlkACK {
                 int RSSI;
                 std::vector<uint16_t> Miss;
 };
+class Client_stat;
 class BlkACK_stat;
 class AP_stat
 {
@@ -143,13 +156,18 @@ public:
 
 
 
-        float getAirTime();
+        float getAirTime_AP();
+        float getLoss_AP();
+        float getUtl_AP();
+        uint16_t getN_clients();
+        std::string getAddr();
         void addPacket(Line_cont*);
         uint32_t getPacketN();
         void prepare_BAMPDU();
         void go_calc();
-        void report();
+        void report_AP();
         void setTime(double);
+        double getTime();
         void classifyPkts();
 
         Parser* getParser();
@@ -157,6 +175,13 @@ public:
 private:
 
         /* data */
+        float mAirtime;
+        float mLoss;
+        float mUtil;
+        uint16_t mN_client;
+
+
+
         Parser* mParser;
         std::string mAddr;
         float mMBytes;
@@ -170,6 +195,7 @@ private:
         uint16_t m_nUPs;
         uint16_t m_nDowns;
         std::map<std::string,BlkACK_stat*> mBlkACKs;
+        std::map<std::string,Client_stat*> mClient_pool;
         std::queue<Line_cont*> m_queue_blockACKreq;
 
 
@@ -184,11 +210,32 @@ private:
         bool is_data(Line_cont*);
         bool is_downlink(Line_cont*);
         bool is_beacon_or_PR(Line_cont*);
-        void getBAMPDU_stats();
+        void calc_clients();
         BlkACK parse_blkack(Line_cont*);
 
 };
 
+class Client_stat
+{
+        public:
+                Client_stat(std::string,AP_stat*);
+                float getAirTime_client();
+                float getUtl_client();
+                void report_client();
+                void calc_stats();
+                void addBlk_stat(BlkACK_stat*);
+                float getLoss_client();
+
+        private:
+                std::string mAddr;
+                AP_stat* mAP_stat;
+                std::vector<BlkACK_stat*> mBlkACKs_client;
+                float mAirtime;
+                float mUtil;
+                float mLoss_mean;
+                float mTime_delta_min;
+                
+};
 class BlkACK_stat
 {
         public:
@@ -199,8 +246,18 @@ class BlkACK_stat
                 bool parse_AMPDU();
                 float getAMPDU_mean();
                 uint16_t getMPDU_num();
+                float getAirTime_flow();
+                float getGap_mean_flow();
+                float getUtl_flow();
+                float getLoss_flow();
+
+
+
                 void setPktSize(uint16_t);
                 void calc_stats();
+                void report_flow();
+                void report_pkt();
+
 
         private:
                 std::string mAddr;
@@ -208,10 +265,14 @@ class BlkACK_stat
                 std::vector<BlkACK*> mACKs;
                 std::vector<uint16_t> mLoss;
                 int set_diff(std::vector<uint16_t>&,std::vector<uint16_t>&);
+                float mAirtime;
+                float mUtil;
                 float mRSSI_mean;
                 float mAMPDU_mean;
+                float mLoss_mean;
                 float mAMPDU_std;
                 float mTime_delta;
+                float mTime_delta_min;
                 uint16_t mAMPDU_max;
                 uint16_t mMPDU_num;
                 uint16_t mPkt_Size;

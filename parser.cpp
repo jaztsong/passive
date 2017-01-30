@@ -182,7 +182,15 @@ Window_data::Window_data(double time,Parser* p)
 {
         mTime = time;
         mAPs.clear();
+        mLines.clear();
+        mOtherAP_pkts.clear();
         this->setParser(p);
+
+        mUtil = 0.0;
+        mAirtime = 0.0;
+        mLoss = 0.0;
+        mN_AP = 0;
+        mN_client = 0;
 }
 
 Parser* Window_data::getParser()
@@ -216,7 +224,14 @@ void Window_data::parse()
                 ( it->second )->setTime(this->getTime());
                 D(( it->first )<<" has "<<( it->second )->getPacketN()<<" pkts");
                 ( it->second )->go_calc();
-                ( it->second )->report();
+                ( it->second )->report_AP();
+
+                mN_AP++;
+                mN_client += ( it->second )->getN_clients();
+                mAirtime += ( it->second )->getAirTime_AP();
+                mUtil += ( it->second )->getUtl_AP();
+                mLoss += ( it->second )->getLoss_AP();
+
         }
         /* D("Check the Other packets "); */
         /* vector<Line_cont*>* tPkts = mAPs["Other"]->getPkts(); */
@@ -224,15 +239,26 @@ void Window_data::parse()
         /*     D((*it)->get_field(Line_cont::F_TIME)<<" " */
         /*                     <<(*it)->get_field(Line_cont::F_TA)); */
         /* } */
+
+        this->report_channel();
                 
+}
 
-
- 
+void Window_data::report_channel()
+{
+        printf("%-5s %10.6f %4d %4d %6.3f %6.3f %6.3f\n",
+                        "CHAN", //level
+                        mTime, //time
+                        mN_AP,//AP number
+                        mN_client,//client number
+                        mLoss,  //mean of loss per A-MPDU
+                        mAirtime,  //Airtime
+                        mUtil  //Utilization
+              );
 }
 
 void Window_data::getAP_pool()
 {
-        
         for(vector<Line_cont*>::iterator it=mLines.begin(); it != mLines.end();++it ){
                 /* (*it)->print_fields(); */
                 /* D("Add Packet "<<( (*it)->get_field(Line_cont::F_TYPE_SUBTYPE))); */
@@ -255,17 +281,96 @@ void Window_data::getAP_pool()
                         if(mAPs.find(t_addr) == mAPs.end())
                                 mAPs[t_addr] = new AP_stat(t_addr,this->getParser());
                 }
-                else{
-                        string t_addr("Other");
-                        if(mAPs.find(t_addr) == mAPs.end())
-                                mAPs[t_addr] = new AP_stat(t_addr,this->getParser());
+        }
+        /* Lab Test setting: we know what the APs are */
+        /* Please remove the chunk of code when doing none lab test */
+        ////////////////////////////////////////////////////////////////////
+        if(mAPs.find("ec:08:6b:71:d2:dc") == mAPs.end())
+                mAPs["ec:08:6b:71:d2:dc"] = new AP_stat("ec:08:6b:71:d2:dc",this->getParser());
+
+        if(mAPs.find("ec:08:6b:71:d2:dd") == mAPs.end())
+                mAPs["ec:08:6b:71:d2:dd"] = new AP_stat("ec:08:6b:71:d2:dd",this->getParser());
+        ///////////////////////////////////////////////////////////////////
+        /* set a client pool */
+        set<string> t_clients;
+        for(vector<Line_cont*>::iterator it=mLines.begin(); it != mLines.end();++it ){
+                /* Single direction packets do not count */
+                string t_addr = (*it)->get_field(Line_cont::F_TA);
+                string t1_addr = (*it)->get_field(Line_cont::F_RA);
+
+                if(mAPs.find(t_addr) != mAPs.end()&& t1_addr.length()>0){
+                        t_clients.insert(t1_addr);
+                }
+                else if(mAPs.find(t1_addr) != mAPs.end()&& t_addr.length()>0){
+                        t_clients.insert(t_addr);
+                }
+                else if(t_addr.length()>0 && t1_addr.length()>0 ){
+                        if(t_clients.find(t_addr) == t_clients.end() &&
+                                        t_clients.find(t1_addr) == t_clients.end())
+                                mOtherAP_pkts.push_back(*it);
+                }
+                /* if(mAPs.find(t_addr) == mAPs.end()) */
+                /*         mAPs[t_addr] = new AP_stat(t_addr,this->getParser()); */
+
+                /* string t_addr = getAP(line_c); */
+        }
+        Analyse_OtherAP();
+}
+void Window_data::Analyse_OtherAP()
+{
+        map<string,int> addr_count;
+        map<string,set<string>> addr_map;
+        for(auto p:mOtherAP_pkts){
+                string t_addr = p->get_field(Line_cont::F_TA);
+                string t1_addr = p->get_field(Line_cont::F_RA);
+                /* if(mAPs.find(t_addr) != mAPs.end() || */
+                /*                 mAPs.find(t1_addr) != mAPs.end()|| */
+                /*                 t_addr.length() < 1) continue; */
+                if(addr_count.find(t_addr) == addr_count.end()){
+                        addr_count[t_addr] = 1;
+                        addr_map[t_addr] = set<string> ();
 
                 }
-                /* string t_addr = getAP(line_c); */
+                else{
+                        addr_count[t_addr] += 1;
+                }
+                addr_map[t_addr].insert(t1_addr);
+
+                t_addr = p->get_field(Line_cont::F_RA);
+                t1_addr = p->get_field(Line_cont::F_TA);
+
+                if(addr_count.find(t_addr) == addr_count.end()){
+                        addr_count[t_addr] = 1;
+                        addr_map[t_addr] = set<string> ();
+                }
+                else{
+
+                        addr_count[t_addr] += 1;
+                }
+                addr_map[t_addr].insert(t1_addr);
 
         }
-}
+        vector<pair<string, int>> sort_v(addr_count.begin(),addr_count.end());
+        sort(sort_v.begin(), sort_v.end(), [](const std::pair<string,int> &left, const std::pair<string,int> &right) {
+                        return left.second > right.second;
+                        });
+        int i = 0;
+        while(i<sort_v.size() && addr_count.size()>0){
+                /* cout<<i<<endl; */
+                if(addr_count.find(sort_v[i].first) != addr_count.end()){
+                        /* cout<<" haha addr "<<sort_v[i].first<<" has "<<sort_v[i].second<<" current addr_count size "<<addr_count.size()<<endl; */
+                        if(mAPs.find(sort_v[i].first) == mAPs.end())
+                                mAPs[sort_v[i].first] = new AP_stat(sort_v[i].first,this->getParser());
+                        for(auto m:addr_map[sort_v[i].first]){
+                                if(addr_count.find(m) != addr_count.end())
+                                        addr_count.erase(addr_count.find(m));
+                        }
+                }
+                i++;
+        }
 
+        
+}
 void Window_data::assignData()
 {
         //The function is built for two purpose: 1) Assign data according to the AP
@@ -297,8 +402,8 @@ void Window_data::assignData()
                         else if ( mAPs.find(ra_addr) != mAPs.end()){
                                 mAPs[ra_addr]->addPacket(*it);
                         }
-                        else
-                                mAPs["Other"]->addPacket(*it);
+                        /* else */
+                        /*         mAPs["Other"]->addPacket(*it); */
                 }
         }
 }
@@ -340,6 +445,12 @@ AP_stat::AP_stat(string mac,Parser* p)
         m_nBlockACK=0;
         m_nBlockACKreq=0;
         m_nMLframe = 0;
+        mClient_pool.clear();
+
+        mN_client = 0;
+        mAirtime = 0.0;
+        mUtil = 0.0;
+        mLoss = 0.0;
         this->setParser(p);
 
 }
@@ -364,6 +475,11 @@ uint32_t AP_stat::getPacketN()
         return mPackets.size();
 }
 
+uint16_t AP_stat::getN_clients()
+{
+        return mN_client;
+
+}
 
 vector<Line_cont*>* AP_stat::getPkts()
 {
@@ -433,6 +549,7 @@ void AP_stat::prepare_BAMPDU()
                                         continue;
                                 }
                         }
+                        /* The core function is here: we do parsing along with addACK */
                         mBlkACKs[t_b->addr]->parse_AMPDU();
 
                 }
@@ -449,64 +566,85 @@ void AP_stat::setTime(double t)
         mTime = t;
 }
 
+double AP_stat::getTime()
+{
+        return mTime;
+}
 void AP_stat::go_calc()
 {
         /* this->getAMPDU_stat(); */
         this->classifyPkts();
         this->prepare_BAMPDU();
-        this->getBAMPDU_stats();// This must be after calculate the blk-based aritime, since the AMPDU len
+        /* this->getBAMPDU_stats();// This must be after calculate the blk-based aritime, since the AMPDU len */
         // is provided when calculating airtime
-}
+        this->calc_clients();
 
-void AP_stat::report()
-{
-        //format:
-        //time AP_address packet_number unweighted_airtime, weighted_airtime, AMPDU_num,
-        //block_ack_num regular_ack_num
-        if(REPORT_LEVEL>0){
-                printf("%4d %10.6f %-16s %4d %10.3f %4d %10.3f %4d(ML) %4d(Up) %4d(Down) %4d(BlkACK) %4d(ACK) %4d(BlkACKreq)\n",
-                                mParser->getWindowSize(),
-                                mTime,mAddr.c_str(),this->getPacketN(),mMBytes,
-                                mB_nAMPDU,mB_AMPDU_len_mean,
-                                m_nMLframe,
-                                m_nUPs,m_nDowns,
-                                m_nBlockACK,m_nACK,m_nBlockACKreq);
-        }else{
-                /* printf("%4d %10.6f %-16s %10.3f %10.3f %4d %10.3f %10.3f %4d\n", */
-                /*                 mParser->getWindowSize(), */
-                /*                 mTime,mAddr.c_str(), */
-                /*                 mAirTime + mAMPDUinc, */
-                /*                 m_AMPDU_len_mean,m_nAMPDU, */
-                /*                 mBlkAirTime, */
-                /*                 mB_AMPDU_len_mean,mB_nAMPDU */
-                /*       ); */
+        for(auto const it:mClient_pool){
+                it.second->calc_stats();
+                it.second->report_client();
+                
+                mAirtime += it.second->getAirTime_client();
+                mLoss += it.second->getLoss_client();
+                mUtil += it.second->getUtl_client();
+
+                mN_client++;
 
         }
 }
 
+float AP_stat::getAirTime_AP()
+{
+        return mAirtime;
+}
+
+float AP_stat::getUtl_AP()
+{
+        return mUtil;
+}
+float AP_stat::getLoss_AP()
+{
+        return mLoss;
+}
+void AP_stat::report_AP()
+{
+        //format:
+        //time AP_address packet_number unweighted_airtime, weighted_airtime, AMPDU_num,
+        //block_ack_num regular_ack_num
+        printf("%-5s %10.6f %-16s %4d %6.3f %6.3f %6.3f\n",
+                        "AP", //level
+                        mTime, //time
+                        mAddr.c_str(),  //AP addr
+                        mN_client,//client number
+                        mLoss,  //mean of loss per A-MPDU
+                        mAirtime,  //Airtime
+                        mUtil  //Utilization
+              );
+}
 
 
-void AP_stat::getBAMPDU_stats(){
+void AP_stat::calc_clients()
+{
         if(mBlkACKs.size()>0){
-                float sum=0;
-                uint16_t n_ampdu = 0;
                 for(map<string, BlkACK_stat*>::iterator it = mBlkACKs.begin();it!=mBlkACKs.end();++it){
-                        it->second->calc_stats();
-                        /* The output helps list the AMPDU stats on a per-ACK basis */
-                        for(vector<tuple<uint16_t,uint16_t,int,float,bool> >::iterator iit = ( it->second ->mAMPDU_tuple ).begin();iit!=( it->second->mAMPDU_tuple ).end();++iit){
-                                cout<<it->first<<" "<<get<0>(*iit)<<" "<<get<1>(*iit)<<" "<<get<2>(*iit)<<" "<<get<3>(*iit)<<endl;
-                                sum += get<0>(*iit);     
-                                n_ampdu++;
+                        string client_addr;
+                        if(it->first.substr(17,17) != mAddr){
+                                client_addr = it->first.substr(17,17);
                         }
-                }
-                /* The overall AMPDU stats across all clients seems like a little pointless as each node has different data rate and */ 
-                /* max AMPDU. But for our one node experiment, the stats is good to use. */
-                mB_nAMPDU=sum;
-                mB_AMPDU_len_mean=sum/(float)n_ampdu;
+                        else{
+                                /* a boring assertion */
+                                assert(it->first.substr(0,17) != mAddr);
+                                client_addr = it->first.substr(0,17);
+                        }
+                        /* If the current client has not been added to the pool, then add it */
+                        if(mClient_pool.find(client_addr) == mClient_pool.end()){
+                                Client_stat* t_client = new Client_stat(client_addr,this);
+                                mClient_pool[client_addr] = t_client;
+                        }
+                        mClient_pool[client_addr]->addBlk_stat(it->second);
 
 
-                /* Set the packet size: if TCP, the bigger flow (data) is set to MTU, ACK flow is set to 64 */
-                for(map<string, BlkACK_stat*>::iterator it = mBlkACKs.begin();it!=mBlkACKs.end();++it){
+                        /* The size inference part */
+                        ////////////////////////////////////////////
                         string rev_addr = it->first.substr(17,17) + it->first.substr(0,17);
                         if(mBlkACKs.find(rev_addr) != mBlkACKs.end()){
                                 if(mBlkACKs[rev_addr]->getAMPDU_mean() > it->second->getAMPDU_mean() &&
@@ -523,8 +661,15 @@ void AP_stat::getBAMPDU_stats(){
                                 it->second->setPktSize(MTU);
 
                         }
+                        /////////////////////////////////////////////
+                        
                 }
         }
+}
+
+string AP_stat::getAddr()
+{
+        return mAddr;
 }
 bool AP_stat::is_ACK(Line_cont* l)
 {
@@ -578,6 +723,69 @@ bool AP_stat::is_downlink(Line_cont* l)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////Client_stat//////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////
+Client_stat::Client_stat(string addr, AP_stat* ap)
+{
+        mAddr = addr;
+        mAP_stat = ap;
+        mAirtime = 0.0;
+        mUtil = 0.0;
+        mLoss_mean = 0.0;
+        mTime_delta_min = 0.0;
+        mBlkACKs_client.clear();
+}
+
+void Client_stat::report_client()
+{
+        printf("%-5s %10.6f %-16s %-16s %6.3f %6.3f %6.3f %6.3f\n",
+                        "CLIENT", //level
+                        mAP_stat->getTime(), //level
+                        mAddr.c_str(),  //client addr
+                        mAP_stat->getAddr().c_str(),  //AP addr
+                        mLoss_mean,  //mean of loss per A-MPDU
+                        mTime_delta_min,  //minimum blockACK gap
+                        getAirTime_client(),  //minimum blockACK gap
+                        getUtl_client()  //Utilization
+              );
+}
+
+void Client_stat::addBlk_stat(BlkACK_stat* b)
+{
+        mBlkACKs_client.push_back(b);
+}
+
+void Client_stat::calc_stats()
+{
+        if(mBlkACKs_client.size() > 0){
+                for(auto blk_stat:mBlkACKs_client){
+
+                        blk_stat->calc_stats();
+                        /* Report at the directional flow level */
+                        blk_stat->report_flow();
+
+                        mTime_delta_min = max(mTime_delta_min,blk_stat->getGap_mean_flow());
+                        mAirtime += blk_stat->getAirTime_flow();
+                        mLoss_mean += blk_stat->getLoss_flow();
+                        mUtil += blk_stat->getUtl_flow();
+                }
+        }
+}
+
+float Client_stat::getUtl_client()
+{
+        return mUtil;
+}
+float Client_stat::getLoss_client()
+{
+        return mLoss_mean;
+}
+float Client_stat::getAirTime_client()
+{
+        
+        return mAirtime;
+}
+////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////BlkACK//////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////
 BlkACK::BlkACK(Line_cont* l)
@@ -621,13 +829,17 @@ BlkACK_stat::BlkACK_stat(string s,AP_stat* ap)
         mACKs.clear();
         mLoss.clear();
         mAMPDU_mean = 0.0;
+        mLoss_mean = 0.0;
         mAMPDU_max = 0;
         mMPDU_num = 0;
+        mAirtime = 0.0;
+        mUtil = 0.0;
         mPkt_Size = 0;
         mFREQ = 0;
         mRSSI_mean = -100;
         mAMPDU_std = 0;
         mTime_delta = 0.0;
+        mTime_delta_min = FLT_MAX;
         mAMPDU_tuple.clear();
 }
 void BlkACK_stat::addACK(BlkACK* b)
@@ -668,6 +880,12 @@ bool BlkACK_stat::parse_AMPDU()
                         t_len = mACKs.back()->SSN - mACKs[mACKs.size()-2]->SSN;
                 }
                 t_len += set_diff(mACKs[mACKs.size()-2]->Miss,mACKs.back()->Miss);
+
+                /* Abnormal case hard filter */
+                if(t_len > 100)
+                        t_len = 1;
+
+                t_len_miss = min(t_len, t_len_miss);
                 
                 /* mACKs.back()->line->print_fields(); */
                 /* cout<<t_len<<" "<<t_len_miss<<endl; */
@@ -684,6 +902,8 @@ bool BlkACK_stat::parse_AMPDU()
         /* The variable name mBAMPDU means AMPDU based on BlkACK. */
         mAMPDU_tuple.push_back(make_tuple(t_len,t_len_miss,mACKs.back()->RSSI,time_delta,mACKs.back()->addr_rev));
 
+        report_pkt();
+
         return true;
 
         /* if(t_len > 0){ */
@@ -695,25 +915,47 @@ bool BlkACK_stat::parse_AMPDU()
         /*         return 0; */
         /* } */
 }
+void BlkACK_stat::report_pkt()
+{
+        if(mAMPDU_tuple.size() > 0){
+                printf("%-5s %10.6f %10.6f %-16s %4d %4d %3d %6.3f\n",
+                                "PKT", //level
+                                mACKs.back()->line->getTime(),//pkt time
+                                mAP_stat->getTime(), //AP time
+                                mAddr.c_str(),  //addr
+                                get<0>( mAMPDU_tuple.back() ),  //AI:A-MPDU Intensity
+                                get<1>( mAMPDU_tuple.back() ),  //loss
+                                get<2>( mAMPDU_tuple.back() ),  //RSSI
+                                get<3>( mAMPDU_tuple.back() )  //blockACK gap
+                      );
+        } 
+}
 
 void BlkACK_stat::calc_stats()
 {
-        int sum = 0, n = 0, RSSI_sum = 0;
+        int sum = 0, n = 0, RSSI_sum = 0, loss_sum = 0;
         float sum_time_delat = 0.0;
-        vector<uint16_t> t_vector;
+        vector<uint16_t> t_vector;//for computing the std
         if(mAMPDU_tuple.size()>0){
                 priority_queue<uint16_t> percentile_q;//it is used to help quickly get the percentile;
+                priority_queue<float,vector<float>,std::greater<float>> percentile_q1;//it is used to help quickly get the percentile;
                 for(vector<tuple<uint16_t,uint16_t,int,float,bool> >::iterator it = mAMPDU_tuple.begin();it!=mAMPDU_tuple.end();++it){
                         sum += get<0>(*it);
+                        loss_sum += get<1>(*it);
                         RSSI_sum += get<2>(*it);
                         sum_time_delat += get<3>(*it);
                         n++;
-                        percentile_q.push(get<0>(*it));
+                        if(get<0>(*it) < 65) percentile_q.push(get<0>(*it));
+                        if(get<3>(*it) > 0.001) percentile_q1.push(get<3>(*it));
                         t_vector.push_back(get<0>(*it));
+                        
                 }
                 mAMPDU_mean = sum/float(n);
                 mMPDU_num = sum;
                 mAMPDU_std = calc_std(t_vector);
+                /* Deal with loss */
+                mLoss_mean = loss_sum/float(n);
+                /* The part is quite essential to our research: calculating the maximum of the A-MPDU Intensity */
                 /* Get the percentile of the AMPDU as max to filter out some abnormal cases. */
                 uint16_t percent_N = 1;
                 while(percent_N < mAMPDU_tuple.size()*0.1 && !percentile_q.empty()){
@@ -722,23 +964,41 @@ void BlkACK_stat::calc_stats()
                         percent_N++;
                 }
                 if(!percentile_q.empty()) mAMPDU_max = percentile_q.top();
+                /* The part is quite essential to our research: calculating the minimum of the Block-ACK gap */
+                percent_N = 1;
+                while(percent_N < mAMPDU_tuple.size()*0.1 && !percentile_q1.empty()){
+                        /* cout<<percentile_q.top()<<endl; */
+                        percentile_q1.pop();
+                        percent_N++;
+                }
+                if(!percentile_q1.empty()) mTime_delta_min = percentile_q1.top();
                 mRSSI_mean = RSSI_sum/float(n);
                 mTime_delta = sum_time_delat/float(n);
 
                 /* Get the frequency. */
                 mFREQ = atoi(mACKs[0]->line->get_field(Line_cont::F_FREQ ).c_str());
+
+                /* Calculate Airtime */
+                mAirtime = mMPDU_num*mTime_delta_min;
+                /* Calculate Utilization */
+                /* calculate the potential max AI first */
+                uint16_t t_max_ai = min((int)max((float)mAMPDU_max,MAX_TRANS_TIME/mTime_delta_min),BITMAP_LEN);
+                mUtil = mAMPDU_mean/float(t_max_ai);
+
         }
 
         /* cout<<mAddr<<" "<<mAMPDU_mean<<" "<<mAMPDU_std<<" "<<mAMPDU_max<<" "<<mRSSI_mean<<" "<<mTime_delta<<" "<<mMPDU_num<<" "<<mFREQ<<endl; */
+        /* cout<<mAddr<<" "<<mAMPDU_max<<" "<<mTime_delta_min<<endl; */
         
 
-        /* Computing the data rate. */
-
-
-
-        //TODO:  For Lixing Tue 17 Jan 2017 01:35:13 PM EST.
-        //LOSS need to be addressed.
-        /* mLoss_mean = */ 
+}
+float BlkACK_stat::getLoss_flow()
+{
+        return mLoss_mean;
+}
+float BlkACK_stat::getGap_mean_flow()
+{
+        return mTime_delta_min;
 }
 
 float BlkACK_stat::getAMPDU_mean()
@@ -751,6 +1011,29 @@ uint16_t BlkACK_stat::getMPDU_num()
         return mMPDU_num;
 }
 
+float BlkACK_stat::getAirTime_flow()
+{
+        
+        return mAirtime;
+}
+float BlkACK_stat::getUtl_flow()
+{
+        return mUtil;
+}
+void BlkACK_stat::report_flow()
+{
+        
+        printf("%-5s %10.6f %-16s %4d %6.3f %6.3f %6.3f %6.3f\n",
+                        "FLOW", //level
+                        mAP_stat->getTime(), //level
+                        mAddr.c_str(),  //addr
+                        mMPDU_num,  //number of MPDU
+                        mLoss_mean,  //mean of loss per A-MPDU
+                        mTime_delta_min,  //minimum blockACK gap
+                        mAirtime,  //minimum blockACK gap
+                        mUtil  //Utilization
+              );
+}
 void BlkACK_stat::setPktSize(uint16_t s)
 {
         mPkt_Size = s;
