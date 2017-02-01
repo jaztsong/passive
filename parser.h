@@ -22,7 +22,7 @@
 #define OVERHEAD_PREAMBLE_L 40
 #define BACKOFF_CW 15
 #define SLOT_TIME 9
-#define MAX_TRANS_TIME 4 //in millisecond
+#define MAX_TRANS_TIME 2 //in millisecond
 //Let's put the weight to zero for now.
 #define WEIGHT 0.0
 #define BITMAP_LEN 64
@@ -129,6 +129,7 @@ class Window_data
                 float mAirtime;
                 float mLoss;
                 uint16_t mN_client;
+                uint16_t mMPDU_num;
                 uint16_t mN_AP;
 
 
@@ -163,6 +164,7 @@ public:
         std::string getAddr();
         void addPacket(Line_cont*);
         uint32_t getPacketN();
+        uint16_t getN_MPDU_AP();
         void prepare_BAMPDU();
         void go_calc();
         void report_AP();
@@ -179,6 +181,7 @@ private:
         float mLoss;
         float mUtil;
         uint16_t mN_client;
+        uint16_t mMPDU_num;
 
 
 
@@ -221,6 +224,7 @@ class Client_stat
                 Client_stat(std::string,AP_stat*);
                 float getAirTime_client();
                 float getUtl_client();
+                uint16_t getN_MPDU_client();
                 void report_client();
                 void calc_stats();
                 void addBlk_stat(BlkACK_stat*);
@@ -234,6 +238,7 @@ class Client_stat
                 float mUtil;
                 float mLoss_mean;
                 float mTime_delta_min;
+                uint16_t mMPDU_num;
                 
 };
 class BlkACK_stat
@@ -245,7 +250,7 @@ class BlkACK_stat
                 std::vector<std::tuple<uint16_t,uint16_t,int,float,bool> > mAMPDU_tuple;
                 bool parse_AMPDU();
                 float getAMPDU_mean();
-                uint16_t getMPDU_num();
+                uint16_t getN_MPDU_flow();
                 float getAirTime_flow();
                 float getGap_mean_flow();
                 float getUtl_flow();
@@ -254,6 +259,7 @@ class BlkACK_stat
 
 
                 void setPktSize(uint16_t);
+                uint16_t getPktSize();
                 void calc_stats();
                 void report_flow();
                 void report_pkt();
