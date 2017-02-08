@@ -113,6 +113,7 @@ class Window_data
                 double getTime();
                 Parser* getParser();
                 void setParser(Parser*);
+                void clean_mem_chan();
         private:
                 std::vector<Line_cont*> mLines;
                 std::map<std::string, AP_stat*> mAPs;
@@ -176,6 +177,7 @@ public:
 
         Parser* getParser();
         void setParser(Parser*);
+        void clean_mem_AP();
 private:
 
         /* data */
@@ -233,6 +235,7 @@ class Client_stat
                 void addBlk_stat(BlkACK_stat*);
                 float getLoss_client();
                 float getRate_client();
+                void clean_mem_client();
 
         private:
                 std::string mAddr;
@@ -272,6 +275,7 @@ class BlkACK_stat
                 void report_flow();
                 float getRate_flow();
                 void report_pkt();
+                void clean_mem_flow();
 
 
         private:

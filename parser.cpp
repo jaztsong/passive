@@ -65,7 +65,7 @@ void Parser::start()
                         if(count == 0 ){
                                 if(is_in_range(line_value)){
                                         line_c = new Line_cont(line_value);
-                                        D(" Start take lines "<<setprecision(15)<<mStartTime
+                                        D(" Start take lines "<<setprecision(18)<<mStartTime
                                                         << " "<<mOffset<<
                                                         " "<<line_c->getTime());
                                 }
@@ -85,18 +85,20 @@ void Parser::start()
                                 t_window_data->addData(line_c);
                         }
                         else if(mStartTime != pre_Time){
-                                t_window_data->parse();
-                                mWindow_datas.push_back(t_window_data);
-                                t_window_data = new Window_data(mStartTime,this);
                                 t_window_data->addData(line_c);
+                                t_window_data->parse();
+                                line_c = NULL;
+                                /* mWindow_datas.push_back(t_window_data); */
+                                delete t_window_data;
+                                t_window_data = new Window_data(mStartTime,this);
                         }
                         else{
                                 assert(mStartTime == t_window_data->getTime());
                                 t_window_data->addData(line_c);
                         }
-                        if(pre_line != NULL){
-                                pre_line->next_line = line_c;
-                        }
+                        /* if(pre_line != NULL){ */
+                        /*         pre_line->next_line = line_c; */
+                        /* } */
 
 
                         pre_line = line_c;
@@ -107,7 +109,8 @@ void Parser::start()
                 }
         }
         t_window_data->parse();
-        mWindow_datas.push_back(t_window_data);
+        /* mWindow_datas.push_back(t_window_data); */
+        delete t_window_data;
 
 }
 
@@ -228,7 +231,7 @@ void Window_data::parse()
                 ( it->second )->go_calc();
                 ( it->second )->report_AP();
 
-                mN_AP++;
+                if(( it->second )->getN_clients() > 0) mN_AP++;
                 mN_client += ( it->second )->getN_clients();
                 mAirtime += ( it->second )->getAirTime_AP();
                 mMPDU_num += ( it->second )->getN_MPDU_AP();
@@ -249,6 +252,19 @@ void Window_data::parse()
                 
 }
 
+void Window_data::clean_mem_chan()
+{
+       for(map<string,AP_stat*>::iterator it = mAPs.begin();it != mAPs.end();++it)
+               delete  it->second;
+       for(auto l:mLines){
+               D("delete packet "<<l->getTime());
+               delete l;
+       }
+       mLines.clear();
+       mAPs.clear();
+       mOtherAP_pkts.clear();
+}
+
 void Window_data::report_channel()
 {
         printf("%-5s %10.6f %4d %4d %4d %6.3f %6.3f %6.3f\n",
@@ -261,6 +277,7 @@ void Window_data::report_channel()
                         mAirtime,  //Airtime
                         mUtil  //Utilization
               );
+        this->clean_mem_chan();
 }
 
 void Window_data::getAP_pool()
@@ -453,6 +470,7 @@ AP_stat::AP_stat(string mac,Parser* p)
         m_nMLframe = 0;
         mMPDU_num = 0;
         mClient_pool.clear();
+        mBlkACKs.clear();
 
         mN_client = 0;
         mAirtime = 0.0;
@@ -585,7 +603,7 @@ double AP_stat::getTime()
 void AP_stat::go_calc()
 {
         /* this->getAMPDU_stat(); */
-        this->classifyPkts();
+        /* this->classifyPkts(); */
         this->prepare_BAMPDU();
         /* this->getBAMPDU_stats();// This must be after calculate the blk-based aritime, since the AMPDU len */
         // is provided when calculating airtime
@@ -647,8 +665,21 @@ void AP_stat::report_AP()
                         mAirtime,  //Airtime
                         mUtil  //Utilization
               );
+        this->clean_mem_AP();
 }
+void AP_stat::clean_mem_AP()
+{
+       for(map<string,BlkACK_stat*>::iterator it = mBlkACKs.begin();it != mBlkACKs.end();++it) 
+               delete it->second;
+       for(map<string,Client_stat*>::iterator it = mClient_pool.begin();it != mClient_pool.end();++it) 
+               delete it->second;
 
+        mPackets.clear();
+        mRetrys.clear();
+        mClient_pool.clear();
+        mBlkACKs.clear();
+
+}
 
 void AP_stat::calc_clients()
 {
@@ -760,6 +791,12 @@ void Client_stat::report_client()
                         getUtl_client(),  //Utilization
                         getRate_client()
               );
+        this->clean_mem_client();
+
+}
+void Client_stat::clean_mem_client()
+{
+       mBlkACKs_client.clear(); 
 }
 
 void Client_stat::addBlk_stat(BlkACK_stat* b)
@@ -1042,7 +1079,10 @@ void BlkACK_stat::calc_stats()
                 if(!percentile_q.empty()) mAMPDU_max = percentile_q.top();
                 /* The part is quite essential to our research: calculating the minimum of the Block-ACK gap */
                 percent_N = 1;
-                while(percent_N < n1*0.10 && !percentile_q1.empty()){
+                /* Adjust the percentile to take as valid gap based on 802.11ac or 802.11n */
+                float gap_cap = 0.1;
+                if(mFREQ > 0 && mFREQ < 5000) gap_cap = 0.4;
+                while(percent_N < n1*gap_cap && !percentile_q1.empty()){
                         /* cout<<"haha pop min gap "<<percentile_q.top()<<endl; */
                         percentile_q1.pop();
                         percent_N++;
@@ -1130,6 +1170,16 @@ void BlkACK_stat::report_flow()
                         mUtil,  //Utilization
                         mRate  //Transmission
               );
+        this->clean_mem_flow();
+}
+
+void BlkACK_stat::clean_mem_flow()
+{
+        
+        for(auto it:mACKs)
+                delete it;
+        mAMPDU_tuple.clear();
+        mvector_Loss.clear();
 }
 float BlkACK_stat::getRate_flow()
 {
