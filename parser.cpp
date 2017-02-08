@@ -591,6 +591,7 @@ void AP_stat::go_calc()
         // is provided when calculating airtime
         this->calc_clients();
 
+
         for(auto const it:mClient_pool){
                 it.second->calc_stats();
                 it.second->report_client();
@@ -605,8 +606,19 @@ void AP_stat::go_calc()
         }
         if(mMPDU_num > 0)
                 mUtil = mUtil/float(mMPDU_num);
+
+        this->calc_ack_airtime();
 }
 
+void AP_stat::calc_ack_airtime()
+{
+        for(auto p:mPackets){
+                if(is_ACK(p)){
+                        mAirtime += 0.2*1000*atof(p->get_field(Line_cont::F_TIME_DELTA).c_str());
+                }
+        }
+        
+}
 float AP_stat::getAirTime_AP()
 {
         return mAirtime;
@@ -657,27 +669,6 @@ void AP_stat::calc_clients()
                                 mClient_pool[client_addr] = t_client;
                         }
                         mClient_pool[client_addr]->addBlk_stat(it->second);
-
-
-                        /* The size inference part */
-                        ////////////////////////////////////////////
-                        string rev_addr = it->first.substr(17,17) + it->first.substr(0,17);
-                        if(mBlkACKs.find(rev_addr) != mBlkACKs.end()){
-                                if(mBlkACKs[rev_addr]->getAMPDU_mean() > it->second->getAMPDU_mean() &&
-                                                mBlkACKs[rev_addr]->getN_MPDU_flow() > it->second->getN_MPDU_flow() ){
-                                        mBlkACKs[rev_addr]->setPktSize(MTU);
-                                        it->second->setPktSize(ACK_LEN);
-                                }else{
-
-                                        mBlkACKs[rev_addr]->setPktSize(ACK_LEN);
-                                        it->second->setPktSize(MTU);
-                                }
-                        }
-                        else{
-                                it->second->setPktSize(MTU);
-
-                        }
-                        /////////////////////////////////////////////
                         
                 }
         }
@@ -747,24 +738,27 @@ Client_stat::Client_stat(string addr, AP_stat* ap)
         mAP_stat = ap;
         mAirtime = 0.0;
         mUtil = 0.0;
-        mLoss_mean = 0.0;
+        mLoss = 0.0;
         mMPDU_num = 0;
-        mTime_delta_min = 0.0;
+        mTime_delta_median = 0.0;
+        mAMPDU_max = 0.0;
+        mRate = 0.0;
         mBlkACKs_client.clear();
 }
 
 void Client_stat::report_client()
 {
-        printf("%-5s %10.6f %-16s %-16s %4d %6.3f %6.3f %6.3f %6.3f\n",
+        printf("%-5s %10.6f %-16s %-16s %4d %6.3f %6.3f %6.3f %6.3f %6.3f\n",
                         "CLIENT", //level
                         mAP_stat->getTime(), //level
                         mAddr.c_str(),  //client addr
                         mAP_stat->getAddr().c_str(),  //AP addr
                         mMPDU_num,//number of MPDUs
-                        mLoss_mean,  //mean of loss per A-MPDU
-                        mTime_delta_min,  //minimum blockACK gap
+                        mLoss,  //mean of loss per A-MPDU
+                        mTime_delta_median,  //median blockACK gap
                         getAirTime_client(),  //minimum blockACK gap
-                        getUtl_client()  //Utilization
+                        getUtl_client(),  //Utilization
+                        getRate_client()
               );
 }
 
@@ -772,24 +766,62 @@ void Client_stat::addBlk_stat(BlkACK_stat* b)
 {
         mBlkACKs_client.push_back(b);
 }
-
+float Client_stat::getRate_client()
+{
+        return mRate;
+}
 void Client_stat::calc_stats()
 {
         if(mBlkACKs_client.size() > 0){
-                for(auto blk_stat:mBlkACKs_client){
-
+                for(auto blk_stat:mBlkACKs_client)
                         blk_stat->calc_stats();
+                /* The size inference part */
+                ////////////////////////////////////////////
+                //The code here is quite ulgy. The reason is the dependency between each of the
+                //functions that setSize need the A-MPDU mean from calc_stats, and calc_rate requires setSize finished.
+                if(mBlkACKs_client.size() == 2){
+
+                        if(mBlkACKs_client[0]->getAMPDU_mean() > mBlkACKs_client[1]->getAMPDU_mean()){
+                                mBlkACKs_client[0]->setPktSize(MTU);
+                                mBlkACKs_client[1]->setPktSize(ACK_LEN);
+                                mBlkACKs_client[0]->calc_rate();
+                                mBlkACKs_client[1]->calc_rate();
+                                mRate = mBlkACKs_client[0]->getRate_flow();
+                                
+                                /* cout<<mBlkACKs_client[0]->getAddr()<<" haha get MTU with "<<mBlkACKs_client[0]->getAMPDU_mean()<<" to "<<mBlkACKs_client[1]->getAMPDU_mean()<<endl; */
+                        }else{
+
+                                mBlkACKs_client[1]->setPktSize(MTU);
+                                mBlkACKs_client[0]->setPktSize(ACK_LEN);
+                                mBlkACKs_client[1]->calc_rate();
+                                mBlkACKs_client[0]->calc_rate();
+                                mRate = mBlkACKs_client[1]->getRate_flow();
+                                /* cout<<mBlkACKs_client[1]->getAddr()<<" haha get MTU with "<<mBlkACKs_client[1]->getAMPDU_mean()<<" to "<<mBlkACKs_client[0]->getAMPDU_mean()<<endl; */
+                        }
+                }
+                else {
+                        mBlkACKs_client[0]->setPktSize(MTU);
+                        mBlkACKs_client[0]->calc_rate();
+                        mRate = mBlkACKs_client[0]->getRate_flow();
+                        /* cout<<mBlkACKs_client[0]->getAddr()<<" haha get MTU by default"<<endl; */
+
+                }
+                /////////////////////////////////////////////
+                for(auto blk_stat:mBlkACKs_client){
+                        /* Report at the directional flow level */
+                        /* blk_stat->report_flow(); */
+
+                        mTime_delta_median = max(mTime_delta_median,blk_stat->getGap_mean_flow());
+                        /* mAMPDU_max = max(mAMPDU_max,blk_stat->getAMPDU_max()); */
+                        mAirtime += blk_stat->getAirTime_flow();
+                        if(blk_stat->getPktSize() == MTU){
+                                mMPDU_num +=  blk_stat->getN_MPDU_flow();
+                                mLoss += blk_stat->getLoss_flow();
+                                mUtil += blk_stat->getUtl_flow();
+                        }
                         /* Report at the directional flow level */
                         blk_stat->report_flow();
-
-                        mTime_delta_min = max(mTime_delta_min,blk_stat->getGap_mean_flow());
-                        mAirtime += blk_stat->getAirTime_flow();
-                        mLoss_mean += blk_stat->getLoss_flow();
-                        mUtil += blk_stat->getN_MPDU_flow()*blk_stat->getUtl_flow();
-                        mMPDU_num +=  blk_stat->getN_MPDU_flow();
                 }
-                if(mMPDU_num>0)
-                        mUtil = mUtil/float(mMPDU_num);
         }
 }
 
@@ -803,7 +835,7 @@ float Client_stat::getUtl_client()
 }
 float Client_stat::getLoss_client()
 {
-        return mLoss_mean;
+        return mLoss;
 }
 float Client_stat::getAirTime_client()
 {
@@ -852,9 +884,9 @@ BlkACK_stat::BlkACK_stat(string s,AP_stat* ap)
         mAddr = s;
         mAP_stat = ap;
         mACKs.clear();
-        mLoss.clear();
+        mvector_Loss.clear();
         mAMPDU_mean = 0.0;
-        mLoss_mean = 0.0;
+        mLoss = 0.0;
         mAMPDU_max = 0;
         mMPDU_num = 0;
         mAirtime = 0.0;
@@ -864,8 +896,9 @@ BlkACK_stat::BlkACK_stat(string s,AP_stat* ap)
         mRSSI_mean = -100;
         mAMPDU_std = 0;
         mTime_delta = 0.0;
-        mTime_delta_min = FLT_MAX;
+        mTime_delta_median = 0.0;
         mAMPDU_tuple.clear();
+        mRate = 0.0;
 }
 void BlkACK_stat::addACK(BlkACK* b)
 {
@@ -893,7 +926,7 @@ bool BlkACK_stat::parse_AMPDU()
                         /* cout<<" t_len under loss "<<t_len_miss<<" "<<endl; */
 
                         if(mACKs[mACKs.size()-2]->Miss.size() < 1){
-                                mLoss.push_back(t_len_miss);
+                                mvector_Loss.push_back(t_len_miss);
                         }
 
                 }
@@ -907,7 +940,7 @@ bool BlkACK_stat::parse_AMPDU()
                 t_len += set_diff(mACKs[mACKs.size()-2]->Miss,mACKs.back()->Miss);
 
                 /* Abnormal case hard filter */
-                if(t_len > 100)
+                if(t_len > 64)
                         t_len = 1;
 
                 t_len_miss = min(t_len, t_len_miss);
@@ -923,11 +956,19 @@ bool BlkACK_stat::parse_AMPDU()
         /* As we set the display filter to only show the non-data packets, we can use the time_delta_displayed metric to measure */
         /* the time gap of the ACK distancing from previous non-data packet. The gap might help infer the data rate. */
         float time_delta = 0.0;
-        if(t_len > 0)
-                time_delta = 1000*atof(mACKs.back()->line->get_field(Line_cont::F_TIME_DELTA).c_str())/float(t_len) ; // convert into millisecond.
+        float t_ack_gap = 1000*atof(mACKs.back()->line->get_field(Line_cont::F_TIME_DELTA).c_str());
+        float pre_own_ack = 1000*( mACKs.back()->line->getTime() - mACKs[mACKs.size()-2]->line->getTime());
+        bool if_continue = abs(t_ack_gap-pre_own_ack) < 0.001;
+        //TODO: The threshold need to be double checked.
+        //For Lixing Fri 03 Feb 2017 02:02:51 PM EST.
+        
+        /* t_ack_gap = max(t_ack_gap,(float)0.048); */
+        if(t_len  > 0)
+                time_delta = t_ack_gap/float(t_len) ; // convert into millisecond.
+        /* time_delta = max(time_delta,(float)0.016); */
 
         /* The variable name mBAMPDU means AMPDU based on BlkACK. */
-        mAMPDU_tuple.push_back(make_tuple(t_len,t_len_miss,mACKs.back()->RSSI,time_delta,mACKs.back()->addr_rev));
+        mAMPDU_tuple.push_back(make_tuple(t_len,t_len_miss,mACKs.back()->RSSI,time_delta,if_continue));
 
         report_pkt();
 
@@ -960,7 +1001,7 @@ void BlkACK_stat::report_pkt()
 
 void BlkACK_stat::calc_stats()
 {
-        int sum = 0, n = 0, RSSI_sum = 0, loss_sum = 0;
+        int sum = 0, n = 0, RSSI_sum = 0, loss_sum = 0 , n1= 0;
         float sum_time_delat = 0.0;
         vector<uint16_t> t_vector;//for computing the std
         if(mAMPDU_tuple.size()>0){
@@ -970,22 +1011,30 @@ void BlkACK_stat::calc_stats()
                         sum += get<0>(*it);
                         loss_sum += get<1>(*it);
                         RSSI_sum += get<2>(*it);
-                        sum_time_delat += get<3>(*it);
-                        n++;
-                        if(get<0>(*it) < 65) percentile_q.push(get<0>(*it));
-                        if(get<3>(*it) > 0.001) percentile_q1.push(get<3>(*it));
+                        if( get<0>(*it) > 1 ) sum_time_delat += get<3>(*it)*get<0>(*it);
+                        if(get<0>(*it) < 65 ) percentile_q.push(get<0>(*it));
+                        if(get<3>(*it) > 0.016 && get<0>(*it) > 1 ) {
+                                percentile_q1.push(get<3>(*it));
+                                n1++;
+                        }
                         t_vector.push_back(get<0>(*it));
+                        n++;
                         
                 }
                 mAMPDU_mean = sum/float(n);
                 mMPDU_num = sum;
                 mAMPDU_std = calc_std(t_vector);
                 /* Deal with loss */
-                mLoss_mean = loss_sum/float(n);
+                mLoss = loss_sum;
+                mRSSI_mean = RSSI_sum/float(n);
+                /* Didn't use this metric so far */
+                mTime_delta = sum_time_delat/float(n);
+                /* Get the frequency. */
+                mFREQ = atoi(mACKs[0]->line->get_field(Line_cont::F_FREQ ).c_str());
                 /* The part is quite essential to our research: calculating the maximum of the A-MPDU Intensity */
                 /* Get the percentile of the AMPDU as max to filter out some abnormal cases. */
                 uint16_t percent_N = 1;
-                while(percent_N < mAMPDU_tuple.size()*0.1 && !percentile_q.empty()){
+                while(percent_N < mAMPDU_tuple.size()*0.05 && !percentile_q.empty()){
                         /* cout<<percentile_q.top()<<endl; */
                         percentile_q.pop();
                         percent_N++;
@@ -993,55 +1042,62 @@ void BlkACK_stat::calc_stats()
                 if(!percentile_q.empty()) mAMPDU_max = percentile_q.top();
                 /* The part is quite essential to our research: calculating the minimum of the Block-ACK gap */
                 percent_N = 1;
-                while(percent_N < mAMPDU_tuple.size()*0.1 && !percentile_q1.empty()){
-                        /* cout<<percentile_q.top()<<endl; */
+                while(percent_N < n1*0.10 && !percentile_q1.empty()){
+                        /* cout<<"haha pop min gap "<<percentile_q.top()<<endl; */
                         percentile_q1.pop();
                         percent_N++;
                 }
-                if(!percentile_q1.empty()) mTime_delta_min = percentile_q1.top();
-                mRSSI_mean = RSSI_sum/float(n);
-                mTime_delta = sum_time_delat/float(n);
+                if(!percentile_q1.empty()) mTime_delta_median = percentile_q1.top();
 
-                /* Get the frequency. */
-                mFREQ = atoi(mACKs[0]->line->get_field(Line_cont::F_FREQ ).c_str());
 
-                /* Decide the maximum transmission time capped for the A-MPDU: The value is different for 802.11ac and 801.11n based */
-                /*         on our experimental observation. */
-                uint16_t max_trans_time = 4;
-                if(mFREQ < 5000 && mFREQ > 2000)
-                        max_trans_time = 2;
 
                 /* cout<<"haha checkout the max transmission time "<<max_trans_time<<endl; */
                 /* calculate the potential max AI first */
-                uint16_t t_max_ai = min((int)max((float)mAMPDU_max,max_trans_time/mTime_delta_min),BITMAP_LEN);
+                /* uint16_t t_max_ai = 0; */
+                /* if(mTime_delta_median > 0){ */
+                /*         /1* mAMPDU_max = min((int)max((float)mAMPDU_max,MAX_TRANS_TIME/mTime_delta_median),BITMAP_LEN); *1/ */
+                /* } */
                 /* Adjust minimum time gap based on the t_max_ai */
-                if(t_max_ai>0)
-                        mTime_delta_min = min(mTime_delta_min, max_trans_time/float(t_max_ai));
-                /* Calculate Airtime */
-                mAirtime = mMPDU_num*mTime_delta_min;
-                /* Calculate Utilization */
-                if(t_max_ai>0)
-                        mUtil = mAMPDU_mean/float(t_max_ai);
-
+                if(mAMPDU_max>0){
+                        mTime_delta_median = min(mTime_delta_median, MAX_TRANS_TIME/float(mAMPDU_max));
+                        /* Calculate Airtime */
+                        /* mAirtime = (  mMPDU_num + 0*mLoss )*mTime_delta_median + n*0.0; */
+                        mAirtime = sum_time_delat;
+                        /* Calculate Utilization */
+                        mUtil = mAMPDU_mean/float(mAMPDU_max);
+                }
         }
 
         /* cout<<mAddr<<" "<<mAMPDU_mean<<" "<<mAMPDU_std<<" "<<mAMPDU_max<<" "<<mRSSI_mean<<" "<<mTime_delta<<" "<<mMPDU_num<<" "<<mFREQ<<endl; */
-        /* cout<<mAddr<<" "<<mAMPDU_max<<" "<<mTime_delta_min<<endl; */
+        /* cout<<mAddr<<" "<<mAMPDU_max<<" "<<mTime_delta_median<<endl; */
         
 
 }
+
+void BlkACK_stat::calc_rate()
+{
+        if(mTime_delta_median > 0){
+                /* mAMPDU_max = min((int)max((float)mAMPDU_max,MAX_TRANS_TIME/mTime_delta_median),BITMAP_LEN); */
+                mRate =  mPkt_Size*8/float(mTime_delta_median*1000);
+        }
+}
 float BlkACK_stat::getLoss_flow()
 {
-        return mLoss_mean;
+        return mLoss;
 }
 float BlkACK_stat::getGap_mean_flow()
 {
-        return mTime_delta_min;
+        return mTime_delta_median;
 }
 
 float BlkACK_stat::getAMPDU_mean()
 {
         return mAMPDU_mean;
+}
+
+uint16_t BlkACK_stat::getAMPDU_max()
+{
+        return mAMPDU_max;
 }
 
 uint16_t BlkACK_stat::getN_MPDU_flow()
@@ -1061,16 +1117,23 @@ float BlkACK_stat::getUtl_flow()
 void BlkACK_stat::report_flow()
 {
         
-        printf("%-5s %10.6f %-16s %4d %6.3f %6.3f %6.3f %6.3f\n",
+        printf("%-5s %10.6f %-16s %4d %6.3f %4d %6.3f %6.3f %6.3f %6.3f %6.3f\n",
                         "FLOW", //level
                         mAP_stat->getTime(), //level
                         mAddr.c_str(),  //addr
                         mMPDU_num,  //number of MPDUs
-                        mLoss_mean,  //mean of loss per A-MPDU
-                        mTime_delta_min,  //minimum blockACK gap
+                        mAMPDU_mean, //mean of AI
+                        mAMPDU_max, //max of AI
+                        mLoss,  //mean of loss per A-MPDU
+                        mTime_delta_median,  //median blockACK gap
                         mAirtime,  //minimum blockACK gap
-                        mUtil  //Utilization
+                        mUtil,  //Utilization
+                        mRate  //Transmission
               );
+}
+float BlkACK_stat::getRate_flow()
+{
+        return mRate;
 }
 void BlkACK_stat::setPktSize(uint16_t s)
 {

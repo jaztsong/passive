@@ -11,3 +11,4 @@ The code is designed for exploring/evaluating the performance of passive side mo
 
 \*All the arguments are in the unit of milliseconds.
 \**Note that the **period** refers to the time span starting from end of previous time window to the beginning of next window.*
+

@@ -19,18 +19,10 @@ int main(int argc, char* argv[])
     struct stat buffer;   
     if ((stat (( argv[1] ), &buffer) == 0)){
 
-            /* stringstream cmd; */
-            /* cmd<<SCRIPT<<string( argv[1] )<<">"<<string( argv[1] )<<".csv"; */
-            /* system(cmd.str().c_str()); */
-            /* Parser* parser = new Parser(string(argv[1])); */
-            /* parser->config(argv+2,3); */
-            /* parser->start(); */
-
-            /* return 0; */
-
-
             stringstream cmd;
 
+#ifdef MULTI_THREAD
+            cerr<<"Mutil thread run"<<endl;
             /* create a folder to save the tmp files. */
             boost::filesystem::path dir("./psv_tmp");
             if(boost::filesystem::exists(dir))
@@ -76,6 +68,32 @@ int main(int argc, char* argv[])
                     }
             }
             boost::filesystem::remove_all(dir);  
+#else
+            /* cerr<<"Single thread run"<<endl; */
+
+            if(boost::filesystem::path(argv[1]).extension() == ".pcap"){
+
+                    /* check if the csv file already exists, because many times of the code editting is not on the tshark part */
+                    /* The tshark output can be reused */ 
+                    if ( !boost::filesystem::exists( string( argv[1] )+".csv" ) )
+                    {
+                            cerr << "Call tshark to get csv file!" << std::endl;
+                            cmd<<SCRIPT<<string( argv[1] )<<">"<<string( argv[1] )<<".csv";
+                            system(cmd.str().c_str());
+                    }
+                    Parser* parser = new Parser(string(argv[1]));
+                    parser->config(argv+2,3);
+                    parser->start();
+            }else if(boost::filesystem::path(argv[1]).extension() == ".csv"){
+                    string fullname(argv[1]);
+                    size_t lastindex = fullname.find_last_of("."); 
+                    string rawname = fullname.substr(0, lastindex);
+                    Parser* parser = new Parser(rawname);
+                    parser->config(argv+2,3);
+                    parser->start();
+            }
+#endif
+
 
     }else{
             cerr<<"**ERROR: No file "<<argv[1]<<" exsist"<<endl;

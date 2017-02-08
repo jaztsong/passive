@@ -16,13 +16,15 @@
 #include <set>
 #include "float.h"
 
+/* #define MULTI_THREAD */
+
 #define ADD_LEN 17
 #define SCRIPT "/home/netscale/A-MPDU/src/Passive/scripts/parse_pcap.sh "
 #define OVERHEAD_PREAMBLE_S 28
 #define OVERHEAD_PREAMBLE_L 40
 #define BACKOFF_CW 15
 #define SLOT_TIME 9
-#define MAX_TRANS_TIME 2 //in millisecond
+#define MAX_TRANS_TIME 4 //in millisecond
 //Let's put the weight to zero for now.
 #define WEIGHT 0.0
 #define BITMAP_LEN 64
@@ -31,8 +33,8 @@
 //1 adds some other comparison components for experimental evaluation
 //2 is the full version that output all
 //
-#define MTU 1500
-#define ACK_LEN 120
+#define MTU 1582
+#define ACK_LEN 134
 
 class Line_cont;
 class Window_data;
@@ -214,6 +216,7 @@ private:
         bool is_downlink(Line_cont*);
         bool is_beacon_or_PR(Line_cont*);
         void calc_clients();
+        void calc_ack_airtime();
         BlkACK parse_blkack(Line_cont*);
 
 };
@@ -229,6 +232,7 @@ class Client_stat
                 void calc_stats();
                 void addBlk_stat(BlkACK_stat*);
                 float getLoss_client();
+                float getRate_client();
 
         private:
                 std::string mAddr;
@@ -236,9 +240,11 @@ class Client_stat
                 std::vector<BlkACK_stat*> mBlkACKs_client;
                 float mAirtime;
                 float mUtil;
-                float mLoss_mean;
-                float mTime_delta_min;
+                float mLoss;
+                float mTime_delta_median;
+                float mRate;
                 uint16_t mMPDU_num;
+                uint16_t mAMPDU_max;
                 
 };
 class BlkACK_stat
@@ -250,6 +256,7 @@ class BlkACK_stat
                 std::vector<std::tuple<uint16_t,uint16_t,int,float,bool> > mAMPDU_tuple;
                 bool parse_AMPDU();
                 float getAMPDU_mean();
+                uint16_t getAMPDU_max();
                 uint16_t getN_MPDU_flow();
                 float getAirTime_flow();
                 float getGap_mean_flow();
@@ -261,7 +268,9 @@ class BlkACK_stat
                 void setPktSize(uint16_t);
                 uint16_t getPktSize();
                 void calc_stats();
+                void calc_rate();
                 void report_flow();
+                float getRate_flow();
                 void report_pkt();
 
 
@@ -269,16 +278,17 @@ class BlkACK_stat
                 std::string mAddr;
                 AP_stat* mAP_stat;
                 std::vector<BlkACK*> mACKs;
-                std::vector<uint16_t> mLoss;
+                std::vector<uint16_t> mvector_Loss;
                 int set_diff(std::vector<uint16_t>&,std::vector<uint16_t>&);
                 float mAirtime;
                 float mUtil;
                 float mRSSI_mean;
                 float mAMPDU_mean;
-                float mLoss_mean;
+                float mLoss;
+                float mRate;
                 float mAMPDU_std;
                 float mTime_delta;
-                float mTime_delta_min;
+                float mTime_delta_median;
                 uint16_t mAMPDU_max;
                 uint16_t mMPDU_num;
                 uint16_t mPkt_Size;
