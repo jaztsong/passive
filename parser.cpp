@@ -49,7 +49,8 @@ void Parser::start()
         double pre_Time = 0.0;
         //TODO: Add time order check!! For Lixing Wed 24 Aug 2016 11:28:12 AM EDT.
         
-        Line_cont* pre_line = NULL;
+         //The double-linked list caused some trouble when I did memory release on a window basis. So I just nuke it out since we did not really use it.
+         /* Line_cont* pre_line = NULL; */ 
         while(getline(infile, line))
         {
                 string line_value;
@@ -101,7 +102,7 @@ void Parser::start()
                         /* } */
 
 
-                        pre_line = line_c;
+                        /* pre_line = line_c; */
 
                         pre_Time = mStartTime;
                         /* D(" Index "<<setprecision(15)<<line_c->getTime()<<" "<<getIndex(line_c)); */
@@ -632,7 +633,7 @@ void AP_stat::calc_ack_airtime()
 {
         for(auto p:mPackets){
                 if(is_ACK(p)){
-                        mAirtime += 0.2*1000*atof(p->get_field(Line_cont::F_TIME_DELTA).c_str());
+                        /* mAirtime += 0.2*1000*atof(p->get_field(Line_cont::F_TIME_DELTA).c_str()); */
                 }
         }
         
@@ -1071,7 +1072,7 @@ void BlkACK_stat::calc_stats()
                 /* The part is quite essential to our research: calculating the maximum of the A-MPDU Intensity */
                 /* Get the percentile of the AMPDU as max to filter out some abnormal cases. */
                 uint16_t percent_N = 1;
-                while(percent_N < mAMPDU_tuple.size()*0.05 && !percentile_q.empty()){
+                while(percent_N < mAMPDU_tuple.size()*0.1 && !percentile_q.empty()){
                         /* cout<<percentile_q.top()<<endl; */
                         percentile_q.pop();
                         percent_N++;
@@ -1094,9 +1095,9 @@ void BlkACK_stat::calc_stats()
                 /* cout<<"haha checkout the max transmission time "<<max_trans_time<<endl; */
                 /* calculate the potential max AI first */
                 /* uint16_t t_max_ai = 0; */
-                /* if(mTime_delta_median > 0){ */
-                /*         /1* mAMPDU_max = min((int)max((float)mAMPDU_max,MAX_TRANS_TIME/mTime_delta_median),BITMAP_LEN); *1/ */
-                /* } */
+                if(mTime_delta_median > 0){
+                        mAMPDU_max = min((int)max((float)mAMPDU_max,MAX_TRANS_TIME/mTime_delta_median),BITMAP_LEN);
+                }
                 /* Adjust minimum time gap based on the t_max_ai */
                 if(mAMPDU_max>0){
                         mTime_delta_median = min(mTime_delta_median, MAX_TRANS_TIME/float(mAMPDU_max));
