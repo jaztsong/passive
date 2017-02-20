@@ -47,6 +47,9 @@ void Parser::start()
         bool first=true;
         Window_data* t_window_data = NULL;
         double pre_Time = 0.0;
+        string pre_time_string;
+        vector<Window_data*> t_cur_windows;
+        vector<Window_data*> t_recycle_windows;
         //TODO: Add time order check!! For Lixing Wed 24 Aug 2016 11:28:12 AM EDT.
         
          //The double-linked list caused some trouble when I did memory release on a window basis. So I just nuke it out since we did not really use it.
@@ -59,10 +62,30 @@ void Parser::start()
                 Line_cont* line_c = NULL;
                 while(getline(ss, line_value, '|'))
                 {
+#ifdef PROBE_REQUEST_BASED
+                        if(count == 5 ){
+                                if(line_value == "4" || line_value =="0x04"){
+                                        D("Probe request updates the window start time "<<pre_time_string);
+                                        if(atof(pre_time_string.c_str()) - mStartTime > mWindow/float(1000) || OVERLAP_WINDOW){
+                                                mStartTime = atof(pre_time_string.c_str());
+                                                /* Since the probe request mode does not need mWindow, we are kind of reusing it, which is not perfectly rigorous. */
+                                                mWindow = DWELL_TIME;
+                                                
+                                        }
+                                        else{
+                                                mWindow = 1000*( atof(pre_time_string.c_str()) - mStartTime ) + DWELL_TIME;
+                                                if(t_window_data != NULL)
+                                                        t_window_data->setDwell_time(mWindow);
+                                        }
+                                        break;
+                                }
+                        }
+#else
                         if(count == 0 && first){
                                 mStartTime = atof(line_value.c_str());
                                 first=false;
                         }
+#endif
                         if(count == 0 ){
                                 if(is_in_range(line_value)){
                                         line_c = new Line_cont(line_value);
@@ -72,10 +95,15 @@ void Parser::start()
                                 }
                                 else
                                         line_c = NULL;
+                                pre_time_string = line_value;
                         }
                         if (line_c != NULL)
                                 line_c->read_field(line_value,count);
+#ifdef PROBE_REQUEST_BASED
+                        else if (count > 5)
+#else
                         else
+#endif
                                 break;
                         count++;
                 }
@@ -83,19 +111,103 @@ void Parser::start()
                 if (line_c != NULL){
                         if(pre_Time == 0.0){
                                 t_window_data = new Window_data(mStartTime,this);
+
+                                /* for overlap window design */
+                                t_cur_windows.push_back(t_window_data);
+                                /* ///// */
+
                                 t_window_data->addData(line_c);
                         }
                         else if(mStartTime != pre_Time){
-                                t_window_data->addData(line_c);
-                                t_window_data->parse();
-                                line_c = NULL;
-                                /* mWindow_datas.push_back(t_window_data); */
-                                delete t_window_data;
+                                for(auto it = t_cur_windows.begin();it != t_cur_windows.end();){
+                                        if(line_c->getTime() - (*it)->getTime() > mWindow/float(1000.0)){
+                                                D("parse and delete Window_data "<<(*it)->getTime()<<" of the "<<t_cur_windows.size());
+                                                (*it)->parse();
+                                                /* mWindow_datas.push_back(t_window_data); */
+                                                /* delete * it; */
+                                                t_recycle_windows.push_back(*it);
+                                                it = t_cur_windows.erase(it);
+                                        }
+                                        else{
+                                                D("add Window_data "<<(*it)->getTime());
+                                                (*it)->addData(line_c);
+                                                ++it;
+                                        }
+                                }
+                                //Trying recycle memory
+                                for(auto it = t_recycle_windows.begin();it != t_recycle_windows.end();){
+                                        if(t_cur_windows.size()> 0){
+                                                D("recycle memory "<<(*it)->getTime()<< "+"<<(*it)->getDwell_time()/(float)1000.0 <<"< "<<t_cur_windows.front()->getTime()<<"?");
+                                                if((*it)->getTime() + (*it)->getDwell_time()/(float)1000.0 < t_cur_windows.front()->getTime()){
+                                                        (*it)->clean_mem_chan();
+                                                        delete * it;
+                                                        it = t_recycle_windows.erase(it);
+                                                }else{
+                                                        ++it;
+                                                }
+                                        }else{
+                                                D("recycle memory "<<(*it)->getTime());
+                                                (*it)->clean_mem_chan();
+                                                delete * it;
+                                                it = t_recycle_windows.erase(it);
+                                        } 
+
+                                }
+                                
+                                /* t_window_data->parse(); */
+                                /* /1* mWindow_datas.push_back(t_window_data); *1/ */
+                                /* delete t_window_data; */
+
+                                D("create new Window_data "<<mStartTime);
                                 t_window_data = new Window_data(mStartTime,this);
+
+                                /* for overlap window design */
+                                t_cur_windows.push_back(t_window_data);
+                                /* /////// */
+
+                                t_window_data->addData(line_c);
+                                /* line_c = NULL; */
                         }
                         else{
                                 assert(mStartTime == t_window_data->getTime());
-                                t_window_data->addData(line_c);
+
+                                /* for overlap window design */
+                                for(auto it = t_cur_windows.begin();it != t_cur_windows.end();){
+                                        if(line_c->getTime() - (*it)->getTime() > mWindow/float(1000.0)){
+                                                D("parse and delete Window_data "<<(*it)->getTime()<<" of the "<<t_cur_windows.size());
+                                                (*it)->parse();
+                                                /* mWindow_datas.push_back(t_window_data); */
+                                                /* delete * it; */
+                                                t_recycle_windows.push_back(*it);
+                                                it = t_cur_windows.erase(it);
+                                        }
+                                        else{
+                                                D("add Window_data "<<(*it)->getTime());
+                                                (*it)->addData(line_c);
+                                                ++it;
+                                        }
+                                }
+                                //Trying recycle memory
+                                /* for(auto it = t_recycle_windows.begin();it != t_recycle_windows.end();){ */
+                                /*         if(t_cur_windows.size()> 0){ */
+                                /*                 D("recycle memory "<<(*it)->getTime()<< "+"<<(*it)->getDwell_time()/(float)1000.0 <<"< "<<t_cur_windows.front()->getTime()<<"?"); */
+                                /*                 if((*it)->getTime() + (*it)->getDwell_time()/(float)1000.0 < t_cur_windows.front()->getTime()){ */
+                                /*                         (*it)->clean_mem_chan(); */
+                                /*                         delete * it; */
+                                /*                         it = t_recycle_windows.erase(it); */
+                                /*                 }else{ */
+                                /*                         ++it; */
+                                /*                 } */
+                                /*         }else{ */
+                                /*                 (*it)->clean_mem_chan(); */
+                                /*                 delete * it; */
+                                /*                 it = t_recycle_windows.erase(it); */
+                                /*         } */ 
+
+                                /* } */
+                                /* //////// */
+
+                                /* t_window_data->addData(line_c); */
                         }
                         /* if(pre_line != NULL){ */
                         /*         pre_line->next_line = line_c; */
@@ -118,6 +230,15 @@ void Parser::start()
 bool Parser::is_in_range(string s)
 {
         /* D(setprecision(12)<<atof(s.c_str())*1000<<" "<<( mStartTime*1000 + mOffset )); */
+#ifdef PROBE_REQUEST_BASED
+        if(atof(s.c_str())*1000 < ( mStartTime*1000 + mWindow ) &&
+                        atof(s.c_str()) >  mStartTime){
+                return true;
+        }
+        else{
+                return false;
+        }
+#else
         if( !m_pass_offset){
                 if(atof(s.c_str())*1000 > ( mStartTime*1000 + mOffset )){
                         m_pass_offset = true;
@@ -143,6 +264,7 @@ bool Parser::is_in_range(string s)
                 }
 
         }
+#endif
 
 }
 
@@ -178,6 +300,10 @@ double Line_cont::getTime()
         return mTime;
 
 }
+void Line_cont::clean_mem_line(){
+        mTime = 0.0;
+        mData.clear();
+}
 
 ////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////Window_data /////////////////////////////
@@ -190,6 +316,11 @@ Window_data::Window_data(double time,Parser* p)
         mLines.clear();
         mOtherAP_pkts.clear();
         this->setParser(p);
+#ifdef PROBE_REQUEST_BASED
+        mDwell_time = DWELL_TIME;
+#else
+        mDwell_time = p->getWindowSize();
+#endif
 
         mUtil = 0.0;
         mAirtime = 0.0;
@@ -255,11 +386,14 @@ void Window_data::parse()
 
 void Window_data::clean_mem_chan()
 {
-       for(map<string,AP_stat*>::iterator it = mAPs.begin();it != mAPs.end();++it)
+        for(map<string,AP_stat*>::iterator it = mAPs.begin();it != mAPs.end();++it){
+                it->second->clean_mem_AP();
                delete  it->second;
+        }
        for(auto l:mLines){
                D("delete packet "<<l->getTime());
-               delete l;
+               if(l->getTime() > 0.0)
+                       l->clean_mem_line();
        }
        mLines.clear();
        mAPs.clear();
@@ -268,6 +402,10 @@ void Window_data::clean_mem_chan()
 
 void Window_data::report_channel()
 {
+#ifdef PROBE_REQUEST_BASED
+        printf("%d ",
+                        mDwell_time);
+#endif
         printf("%-5s %10.6f %4d %4d %4d %6.3f %6.3f %6.3f\n",
                         "CHAN", //level
                         mTime, //time
@@ -278,9 +416,18 @@ void Window_data::report_channel()
                         mAirtime,  //Airtime
                         mUtil  //Utilization
               );
-        this->clean_mem_chan();
+        /* this->clean_mem_chan(); */
 }
 
+void Window_data::setDwell_time(uint16_t d)
+{
+        mDwell_time = d;
+}
+
+uint16_t Window_data::getDwell_time()
+{
+        return mDwell_time;
+}
 void Window_data::getAP_pool()
 {
         for(vector<Line_cont*>::iterator it=mLines.begin(); it != mLines.end();++it ){
@@ -626,18 +773,18 @@ void AP_stat::go_calc()
         if(mMPDU_num > 0)
                 mUtil = mUtil/float(mMPDU_num);
 
-        this->calc_ack_airtime();
+        /* this->calc_ack_airtime(); */
 }
 
-void AP_stat::calc_ack_airtime()
-{
-        for(auto p:mPackets){
-                if(is_ACK(p)){
-                        /* mAirtime += 0.2*1000*atof(p->get_field(Line_cont::F_TIME_DELTA).c_str()); */
-                }
-        }
+/* void AP_stat::calc_ack_airtime() */
+/* { */
+/*         for(auto p:mPackets){ */
+/*                 if(is_ACK(p)){ */
+/*                         /1* mAirtime += 0.2*1000*atof(p->get_field(Line_cont::F_TIME_DELTA).c_str()); *1/ */
+/*                 } */
+/*         } */
         
-}
+/* } */
 float AP_stat::getAirTime_AP()
 {
         return mAirtime;
@@ -666,14 +813,18 @@ void AP_stat::report_AP()
                         mAirtime,  //Airtime
                         mUtil  //Utilization
               );
-        this->clean_mem_AP();
+        /* this->clean_mem_AP(); */
 }
 void AP_stat::clean_mem_AP()
 {
-       for(map<string,BlkACK_stat*>::iterator it = mBlkACKs.begin();it != mBlkACKs.end();++it) 
+       for(map<string,Client_stat*>::iterator it = mClient_pool.begin();it != mClient_pool.end();++it) {
+                it->second->clean_mem_client();
                delete it->second;
-       for(map<string,Client_stat*>::iterator it = mClient_pool.begin();it != mClient_pool.end();++it) 
+       }
+       for(map<string,BlkACK_stat*>::iterator it = mBlkACKs.begin();it != mBlkACKs.end();++it){
+                it->second->clean_mem_flow();
                delete it->second;
+       }
 
         mPackets.clear();
         mRetrys.clear();
@@ -687,6 +838,7 @@ void AP_stat::calc_clients()
         if(mBlkACKs.size()>0){
                 for(map<string, BlkACK_stat*>::iterator it = mBlkACKs.begin();it!=mBlkACKs.end();++it){
                         string client_addr;
+                        /* assert(it->first.length()>17); */
                         if(it->first.substr(17,17) != mAddr){
                                 client_addr = it->first.substr(17,17);
                         }
@@ -717,7 +869,10 @@ bool AP_stat::is_ACK(Line_cont* l)
 
 bool AP_stat::is_blockACK(Line_cont* l)
 {
-       return ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "25" ) || ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "0x19" ); 
+        if(l->get_field(Line_cont::F_RA).length() + l->get_field(Line_cont::F_TA).length() > 2*17 - 1)
+                return ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "25" ) || ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "0x19" ); 
+        else
+                return false;
 }
 
 
@@ -776,11 +931,12 @@ Client_stat::Client_stat(string addr, AP_stat* ap)
         mAMPDU_max = 0.0;
         mRate = 0.0;
         mBlkACKs_client.clear();
+        mRSSI = -100;
 }
 
 void Client_stat::report_client()
 {
-        printf("%-5s %10.6f %-16s %-16s %4d %6.3f %6.3f %6.3f %6.3f %6.3f\n",
+        printf("%-5s %10.6f %-16s %-16s %4d %6.3f %6.3f %6.3f %6.3f %6.3f %4d\n",
                         "CLIENT", //level
                         mAP_stat->getTime(), //level
                         mAddr.c_str(),  //client addr
@@ -790,9 +946,10 @@ void Client_stat::report_client()
                         mTime_delta_median,  //median blockACK gap
                         getAirTime_client(),  //minimum blockACK gap
                         getUtl_client(),  //Utilization
-                        getRate_client()
+                        getRate_client(), //Rate
+                        getRSSI_client() //RSSI
               );
-        this->clean_mem_client();
+        /* this->clean_mem_client(); */
 
 }
 void Client_stat::clean_mem_client()
@@ -807,6 +964,10 @@ void Client_stat::addBlk_stat(BlkACK_stat* b)
 float Client_stat::getRate_client()
 {
         return mRate;
+}
+int Client_stat::getRSSI_client()
+{
+        return mRSSI;
 }
 void Client_stat::calc_stats()
 {
@@ -825,6 +986,7 @@ void Client_stat::calc_stats()
                                 mBlkACKs_client[0]->calc_rate();
                                 mBlkACKs_client[1]->calc_rate();
                                 mRate = mBlkACKs_client[0]->getRate_flow();
+                                mRSSI = mBlkACKs_client[0]->getRSSI_flow();
                                 
                                 /* cout<<mBlkACKs_client[0]->getAddr()<<" haha get MTU with "<<mBlkACKs_client[0]->getAMPDU_mean()<<" to "<<mBlkACKs_client[1]->getAMPDU_mean()<<endl; */
                         }else{
@@ -834,6 +996,7 @@ void Client_stat::calc_stats()
                                 mBlkACKs_client[1]->calc_rate();
                                 mBlkACKs_client[0]->calc_rate();
                                 mRate = mBlkACKs_client[1]->getRate_flow();
+                                mRSSI = mBlkACKs_client[1]->getRSSI_flow();
                                 /* cout<<mBlkACKs_client[1]->getAddr()<<" haha get MTU with "<<mBlkACKs_client[1]->getAMPDU_mean()<<" to "<<mBlkACKs_client[0]->getAMPDU_mean()<<endl; */
                         }
                 }
@@ -841,6 +1004,7 @@ void Client_stat::calc_stats()
                         mBlkACKs_client[0]->setPktSize(MTU);
                         mBlkACKs_client[0]->calc_rate();
                         mRate = mBlkACKs_client[0]->getRate_flow();
+                        mRSSI = mBlkACKs_client[0]->getRSSI_flow();
                         /* cout<<mBlkACKs_client[0]->getAddr()<<" haha get MTU by default"<<endl; */
 
                 }
@@ -978,8 +1142,10 @@ bool BlkACK_stat::parse_AMPDU()
                 t_len += set_diff(mACKs[mACKs.size()-2]->Miss,mACKs.back()->Miss);
 
                 /* Abnormal case hard filter */
-                if(t_len > 64)
+                if(t_len > 64){
+                        /* cout<<" error t_len > 64 "<<t_len<<endl; */
                         t_len = 1;
+                }
 
                 t_len_miss = min(t_len, t_len_miss);
                 
@@ -1064,7 +1230,7 @@ void BlkACK_stat::calc_stats()
                 mAMPDU_std = calc_std(t_vector);
                 /* Deal with loss */
                 mLoss = loss_sum;
-                mRSSI_mean = RSSI_sum/float(n);
+                mRSSI_mean =(int) RSSI_sum/float(n);
                 /* Didn't use this metric so far */
                 mTime_delta = sum_time_delat/float(n);
                 /* Get the frequency. */
@@ -1081,8 +1247,8 @@ void BlkACK_stat::calc_stats()
                 /* The part is quite essential to our research: calculating the minimum of the Block-ACK gap */
                 percent_N = 1;
                 /* Adjust the percentile to take as valid gap based on 802.11ac or 802.11n */
-                float gap_cap = 0.1;
-                if(mFREQ > 0 && mFREQ < 5000) gap_cap = 0.4;
+                float gap_cap = 0.05;
+                if(mFREQ > 0 && mFREQ < 5000) gap_cap = 0.2;
                 while(percent_N < n1*gap_cap && !percentile_q1.empty()){
                         /* cout<<"haha pop min gap "<<percentile_q.top()<<endl; */
                         percentile_q1.pop();
@@ -1158,7 +1324,7 @@ float BlkACK_stat::getUtl_flow()
 void BlkACK_stat::report_flow()
 {
         
-        printf("%-5s %10.6f %-16s %4d %6.3f %4d %6.3f %6.3f %6.3f %6.3f %6.3f\n",
+        printf("%-5s %10.6f %-16s %4d %6.3f %4d %6.3f %6.3f %6.3f %6.3f %6.3f %4d\n",
                         "FLOW", //level
                         mAP_stat->getTime(), //level
                         mAddr.c_str(),  //addr
@@ -1169,9 +1335,10 @@ void BlkACK_stat::report_flow()
                         mTime_delta_median,  //median blockACK gap
                         mAirtime,  //minimum blockACK gap
                         mUtil,  //Utilization
-                        mRate  //Transmission
+                        mRate,  //Transmission
+                        mRSSI_mean //RSSI
               );
-        this->clean_mem_flow();
+        /* this->clean_mem_flow(); */
 }
 
 void BlkACK_stat::clean_mem_flow()
@@ -1182,10 +1349,15 @@ void BlkACK_stat::clean_mem_flow()
         mAMPDU_tuple.clear();
         mvector_Loss.clear();
 }
+int BlkACK_stat::getRSSI_flow()
+{
+        return mRSSI_mean;     
+}
 float BlkACK_stat::getRate_flow()
 {
         return mRate;
 }
+
 void BlkACK_stat::setPktSize(uint16_t s)
 {
         mPkt_Size = s;

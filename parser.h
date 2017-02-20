@@ -17,12 +17,14 @@
 #include "float.h"
 
 /* #define MULTI_THREAD */
+#define PROBE_REQUEST_BASED
+#define OVERLAP_WINDOW true
 
 #define ADD_LEN 17
 #define SCRIPT "/home/netscale/A-MPDU/src/Passive/scripts/parse_pcap.sh "
 #define OVERHEAD_PREAMBLE_S 28
 #define OVERHEAD_PREAMBLE_L 40
-#define BACKOFF_CW 15
+#define DWELL_TIME 40
 #define SLOT_TIME 9
 #define MAX_TRANS_TIME 4 //in millisecond
 //Let's put the weight to zero for now.
@@ -93,6 +95,7 @@ class Line_cont
                 void print_fields();
                 double getTime();
                 Line_cont* next_line;
+                void clean_mem_line();
 
         private:
                 double mTime;
@@ -114,12 +117,15 @@ class Window_data
                 Parser* getParser();
                 void setParser(Parser*);
                 void clean_mem_chan();
+                void setDwell_time(uint16_t);
+                uint16_t getDwell_time();
         private:
                 std::vector<Line_cont*> mLines;
                 std::map<std::string, AP_stat*> mAPs;
                 std::vector<Line_cont*> mOtherAP_pkts;
                 Parser* mParser;
                 double  mTime;
+                uint16_t mDwell_time;
                 void getAP_pool();
                 void assignData();
                 bool is_downlink(Line_cont*);
@@ -235,6 +241,7 @@ class Client_stat
                 void addBlk_stat(BlkACK_stat*);
                 float getLoss_client();
                 float getRate_client();
+                int getRSSI_client();
                 void clean_mem_client();
 
         private:
@@ -246,6 +253,7 @@ class Client_stat
                 float mLoss;
                 float mTime_delta_median;
                 float mRate;
+                int mRSSI;
                 uint16_t mMPDU_num;
                 uint16_t mAMPDU_max;
                 
@@ -274,6 +282,7 @@ class BlkACK_stat
                 void calc_rate();
                 void report_flow();
                 float getRate_flow();
+                int getRSSI_flow();
                 void report_pkt();
                 void clean_mem_flow();
 
@@ -286,7 +295,7 @@ class BlkACK_stat
                 int set_diff(std::vector<uint16_t>&,std::vector<uint16_t>&);
                 float mAirtime;
                 float mUtil;
-                float mRSSI_mean;
+                int mRSSI_mean;
                 float mAMPDU_mean;
                 float mLoss;
                 float mRate;

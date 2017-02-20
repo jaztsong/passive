@@ -1,7 +1,7 @@
-1       2         3            4        5        6       7        8            9            10           11
--       -         -            -        -        -       -        -            -            -            -
+1       2         3            4        5        6       7        8            9            10           11    12
+-       -         -            -        -        -       -        -            -            -            -     -
 CHAN    Time      #AP          #Client  #MPDU    Loss    Airtime  Utilization
 AP      time      BSSID        #Client  #MPDU    Loss    Airtime  Utilization
-CLIENT  time      client_addr  BSSID    #MPDU    Loss    min_gap  Airtime      Utilization  Rate
-FLOW    time      addr         #MPDU    AI_mean  AI_max  Loss     min_gap      Airtime      Utilization  Rate
+CLIENT  time      client_addr  BSSID    #MPDU    Loss    min_gap  Airtime      Utilization  Rate         RSSI
+FLOW    time      addr         #MPDU    AI_mean  AI_max  Loss     min_gap      Airtime      Utilization  Rate  RSSI
 PKT     pkt_time  time         addr     AI       Loss    RSSI     gap
