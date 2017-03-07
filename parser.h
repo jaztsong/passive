@@ -17,8 +17,8 @@
 #include "float.h"
 
 /* #define MULTI_THREAD */
-#define PROBE_REQUEST_BASED
-#define OVERLAP_WINDOW true
+/* #define PROBE_REQUEST_BASED */
+/* #define OVERLAP_WINDOW true */
 
 #define ADD_LEN 17
 #define SCRIPT "/home/netscale/A-MPDU/src/Passive/scripts/parse_pcap.sh "
@@ -119,6 +119,7 @@ class Window_data
                 void clean_mem_chan();
                 void setDwell_time(uint16_t);
                 uint16_t getDwell_time();
+                void setProber(std::string);
         private:
                 std::vector<Line_cont*> mLines;
                 std::map<std::string, AP_stat*> mAPs;
@@ -140,6 +141,7 @@ class Window_data
                 uint16_t mN_client;
                 uint16_t mMPDU_num;
                 uint16_t mN_AP;
+                std::string mProber;
 
 
 };
@@ -219,6 +221,8 @@ private:
 
         bool is_ACK(Line_cont*);
         bool is_blockACK(Line_cont*);
+        bool is_RTS(Line_cont*);
+        bool is_CTS(Line_cont*);
         bool is_blockACKreq(Line_cont*);
         bool is_data(Line_cont*);
         bool is_downlink(Line_cont*);
@@ -264,6 +268,8 @@ class BlkACK_stat
                 BlkACK_stat (std::string,AP_stat*);
                 std::string getAddr();
                 void addACK(BlkACK*);
+                void add_ACK_airtime(float);
+                void addRTS_airtime(float);
                 std::vector<std::tuple<uint16_t,uint16_t,int,float,bool> > mAMPDU_tuple;
                 bool parse_AMPDU();
                 float getAMPDU_mean();
@@ -292,6 +298,7 @@ class BlkACK_stat
                 AP_stat* mAP_stat;
                 std::vector<BlkACK*> mACKs;
                 std::vector<uint16_t> mvector_Loss;
+                std::vector<float> mACK_airtime;
                 int set_diff(std::vector<uint16_t>&,std::vector<uint16_t>&);
                 float mAirtime;
                 float mUtil;

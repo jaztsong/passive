@@ -50,6 +50,7 @@ void Parser::start()
         string pre_time_string;
         vector<Window_data*> t_cur_windows;
         vector<Window_data*> t_recycle_windows;
+        string cur_prober,t_addr;
         //TODO: Add time order check!! For Lixing Wed 24 Aug 2016 11:28:12 AM EDT.
         
          //The double-linked list caused some trouble when I did memory release on a window basis. So I just nuke it out since we did not really use it.
@@ -63,6 +64,10 @@ void Parser::start()
                 while(getline(ss, line_value, '|'))
                 {
 #ifdef PROBE_REQUEST_BASED
+                        if(count == 3 && line_value.length()>0){
+                                t_addr = line_value;
+
+                        }
                         if(count == 5 ){
                                 if(line_value == "4" || line_value =="0x04"){
                                         D("Probe request updates the window start time "<<pre_time_string);
@@ -70,6 +75,7 @@ void Parser::start()
                                                 mStartTime = atof(pre_time_string.c_str());
                                                 /* Since the probe request mode does not need mWindow, we are kind of reusing it, which is not perfectly rigorous. */
                                                 mWindow = DWELL_TIME;
+                                                cur_prober = t_addr;
                                                 
                                         }
                                         else{
@@ -161,6 +167,10 @@ void Parser::start()
                                 D("create new Window_data "<<mStartTime);
                                 t_window_data = new Window_data(mStartTime,this);
 
+#ifdef PROBE_REQUEST_BASED
+                                /* for the probe request based manner, add the device who help output this data */
+                                t_window_data -> setProber(cur_prober);
+#endif
                                 /* for overlap window design */
                                 t_cur_windows.push_back(t_window_data);
                                 /* /////// */
@@ -316,6 +326,7 @@ Window_data::Window_data(double time,Parser* p)
         mLines.clear();
         mOtherAP_pkts.clear();
         this->setParser(p);
+        mProber = "";
 #ifdef PROBE_REQUEST_BASED
         mDwell_time = DWELL_TIME;
 #else
@@ -330,6 +341,10 @@ Window_data::Window_data(double time,Parser* p)
         mMPDU_num = 0;
 }
 
+void Window_data::setProber(string p)
+{
+        mProber = p;
+}
 Parser* Window_data::getParser()
 {
         if(mParser == NULL){
@@ -403,8 +418,8 @@ void Window_data::clean_mem_chan()
 void Window_data::report_channel()
 {
 #ifdef PROBE_REQUEST_BASED
-        printf("%d ",
-                        mDwell_time);
+        printf("%d %-16s ",
+                        mDwell_time,mProber.c_str());
 #endif
         printf("%-5s %10.6f %4d %4d %4d %6.3f %6.3f %6.3f\n",
                         "CHAN", //level
@@ -415,6 +430,7 @@ void Window_data::report_channel()
                         mLoss,  //mean of loss per A-MPDU
                         mAirtime,  //Airtime
                         mUtil  //Utilization
+                        /* mLines.size() */
               );
         /* this->clean_mem_chan(); */
 }
@@ -704,15 +720,26 @@ void AP_stat::classifyPkts(){
 }
 void AP_stat::prepare_BAMPDU()
 {
+        string pre_client_addr = "";
         for(vector<Line_cont* >::iterator it = mPackets.begin(); it != mPackets.end();++it){
                 //Populate BlkACK stats
                 if(is_blockACK(*it)){
                         BlkACK* t_b =  new BlkACK(*it);
+                        /* Add a manual filter to do a loss emulation to investigate the performance under loss */
+                        /* this function is aborted so far */
                         if(mBlkACKs.find(t_b->addr) == mBlkACKs.end()){
                                         BlkACK_stat* t_blkack_stat = new BlkACK_stat(t_b->addr,this);
                                         mBlkACKs[t_b->addr]=t_blkack_stat;
                         }
                         mBlkACKs[t_b->addr]->addACK(t_b);
+                        if((*it)->get_field(Line_cont::F_TA) == mAddr){
+                                pre_client_addr = (*it)->get_field(Line_cont::F_RA);
+                        }else{
+                                pre_client_addr = (*it)->get_field(Line_cont::F_TA);
+                        }
+
+
+
                         /* check if the blockAck is responding a blockAckreq */
                         /* The reason to do this is that, as observed, when a blockACK is purposed to respond */
                         /* a blockACKreq, the bitmap is meaningless. In this case, the blockACK does not infer any */
@@ -735,6 +762,44 @@ void AP_stat::prepare_BAMPDU()
                 else if(is_blockACKreq(*it)){
                         /* cout<<"Glean BlkACKreq."<<endl; */
                         m_queue_blockACKreq.push(*it);
+                }
+                else if(is_RTS(*it)){
+                        /* Get the address of RTS as reverse order for matching corresponding blockACK */
+                        string t_addr1 = (*it)->get_field(Line_cont::F_TA);
+                        string t_addr2 = (*it)->get_field(Line_cont::F_RA);
+
+                        if(mBlkACKs.find(t_addr2 + t_addr1) == mBlkACKs.end()){
+                                        BlkACK_stat* t_blkack_stat = new BlkACK_stat(t_addr2 + t_addr1,this);
+                                        mBlkACKs[t_addr2 + t_addr1]=t_blkack_stat;
+                        }
+                        /* mBlkACKs[t_addr2 + t_addr1]->addRTS_airtime(0.001*atof((*it)->get_field(Line_cont::F_NAV).c_str())); */
+                        mBlkACKs[t_addr2 + t_addr1]->addRTS_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str()));
+                        
+                }
+                /* else if(is_CTS(*it)){ */
+                /*         if(t_blkack_stat != NULL) */
+                /*                 t_blkack_stat->addRTS_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str())); */
+                /* } */
+                else if(is_ACK(*it)){
+                        string t_addr2 = (*it)->get_field(Line_cont::F_RA);
+                        cout<<"Find ACK ";
+                        (*it)->print_fields();
+                        if(t_addr2 == mAddr){
+                                if(pre_client_addr.length()>0){
+                                        if(mBlkACKs.find(pre_client_addr + t_addr2) == mBlkACKs.end()){
+                                                BlkACK_stat* t_blkack_stat = new BlkACK_stat(pre_client_addr + t_addr2,this);
+                                                mBlkACKs[pre_client_addr + t_addr2]=t_blkack_stat;
+                                        }
+
+                                        mBlkACKs[pre_client_addr + t_addr2]->add_ACK_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str()));
+                                }
+                        }else{
+                                if(mBlkACKs.find(mAddr + t_addr2) == mBlkACKs.end()){
+                                        BlkACK_stat* t_blkack_stat = new BlkACK_stat(mAddr + t_addr2,this);
+                                        mBlkACKs[mAddr + t_addr2]=t_blkack_stat;
+                                }
+                                mBlkACKs[mAddr + t_addr2]->add_ACK_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str()));
+                        }
                 }
         }
 }
@@ -875,6 +940,18 @@ bool AP_stat::is_blockACK(Line_cont* l)
                 return false;
 }
 
+bool AP_stat::is_RTS(Line_cont* l)
+{
+        if(l->get_field(Line_cont::F_RA).length() + l->get_field(Line_cont::F_TA).length() > 2*17 - 1)
+                return ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "27" ) || ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "0x1b" ); 
+        else
+                return false;
+}
+
+bool AP_stat::is_CTS(Line_cont* l)
+{
+        return ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "28" ) || ( l->get_field(Line_cont::F_TYPE_SUBTYPE) == "0x1c" ); 
+}
 
 bool AP_stat::is_blockACKreq(Line_cont* l)
 {
@@ -1087,6 +1164,7 @@ BlkACK_stat::BlkACK_stat(string s,AP_stat* ap)
         mAP_stat = ap;
         mACKs.clear();
         mvector_Loss.clear();
+        mACK_airtime.clear();
         mAMPDU_mean = 0.0;
         mLoss = 0.0;
         mAMPDU_max = 0;
@@ -1269,11 +1347,20 @@ void BlkACK_stat::calc_stats()
                         mTime_delta_median = min(mTime_delta_median, MAX_TRANS_TIME/float(mAMPDU_max));
                         /* Calculate Airtime */
                         /* mAirtime = (  mMPDU_num + 0*mLoss )*mTime_delta_median + n*0.0; */
-                        mAirtime = sum_time_delat;
+                        mAirtime += sum_time_delat;
                         /* Calculate Utilization */
                         mUtil = mAMPDU_mean/float(mAMPDU_max);
                 }
+
         }
+
+        /* add the airtime contributed from ACK */
+        /* if(mACK_airtime.size() > 0){ */
+        /*         sort(mACK_airtime.begin(),mACK_airtime.end()); */
+        /*         /1* mAirtime += mACK_airtime[int(mACK_airtime.size()*0.1)]*mACK_airtime.size(); *1/ */
+
+        /* } */
+
 
         /* cout<<mAddr<<" "<<mAMPDU_mean<<" "<<mAMPDU_std<<" "<<mAMPDU_max<<" "<<mRSSI_mean<<" "<<mTime_delta<<" "<<mMPDU_num<<" "<<mFREQ<<endl; */
         /* cout<<mAddr<<" "<<mAMPDU_max<<" "<<mTime_delta_median<<endl; */
@@ -1281,6 +1368,14 @@ void BlkACK_stat::calc_stats()
 
 }
 
+void BlkACK_stat::addRTS_airtime(float f)
+{
+        mAirtime += f;
+}
+void BlkACK_stat::add_ACK_airtime(float f)
+{
+        mACK_airtime.push_back(f);
+}
 void BlkACK_stat::calc_rate()
 {
         if(mTime_delta_median > 0){
@@ -1348,6 +1443,7 @@ void BlkACK_stat::clean_mem_flow()
                 delete it;
         mAMPDU_tuple.clear();
         mvector_Loss.clear();
+        mACK_airtime.clear();
 }
 int BlkACK_stat::getRSSI_flow()
 {
