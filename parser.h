@@ -38,6 +38,13 @@
 #define MTU 1582
 #define ACK_LEN 134
 
+/* The percentile parameter to compute transmission rate */
+#define X_PERCENTILE_5 0.05
+#define X_PERCENTILE_24 0.20
+
+/* #define X_PERCENTILE_5 0.25 */
+/* #define X_PERCENTILE_24 0.05 */
+
 class Line_cont;
 class Window_data;
 class Parser
@@ -258,6 +265,7 @@ class Client_stat
                 float mTime_delta_median;
                 float mRate;
                 int mRSSI;
+                float mAMPDU_mean;
                 uint16_t mMPDU_num;
                 uint16_t mAMPDU_max;
                 
@@ -289,6 +297,7 @@ class BlkACK_stat
                 void report_flow();
                 float getRate_flow();
                 int getRSSI_flow();
+                float getAMPDU_mean_flow();
                 void report_pkt();
                 void clean_mem_flow();
 

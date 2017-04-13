@@ -721,6 +721,7 @@ void AP_stat::classifyPkts(){
 void AP_stat::prepare_BAMPDU()
 {
         string pre_client_addr = "";
+        BlkACK_stat* rts_blkack_stat = NULL;
         for(vector<Line_cont* >::iterator it = mPackets.begin(); it != mPackets.end();++it){
                 //Populate BlkACK stats
                 if(is_blockACK(*it)){
@@ -771,36 +772,42 @@ void AP_stat::prepare_BAMPDU()
                         if(mBlkACKs.find(t_addr2 + t_addr1) == mBlkACKs.end()){
                                         BlkACK_stat* t_blkack_stat = new BlkACK_stat(t_addr2 + t_addr1,this);
                                         mBlkACKs[t_addr2 + t_addr1]=t_blkack_stat;
+                                        rts_blkack_stat = t_blkack_stat;
                         }
                         /* mBlkACKs[t_addr2 + t_addr1]->addRTS_airtime(0.001*atof((*it)->get_field(Line_cont::F_NAV).c_str())); */
                         mBlkACKs[t_addr2 + t_addr1]->addRTS_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str()));
                         
                 }
-                /* else if(is_CTS(*it)){ */
-                /*         if(t_blkack_stat != NULL) */
-                /*                 t_blkack_stat->addRTS_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str())); */
-                /* } */
-                else if(is_ACK(*it)){
-                        string t_addr2 = (*it)->get_field(Line_cont::F_RA);
-                        cout<<"Find ACK ";
-                        (*it)->print_fields();
-                        if(t_addr2 == mAddr){
-                                if(pre_client_addr.length()>0){
-                                        if(mBlkACKs.find(pre_client_addr + t_addr2) == mBlkACKs.end()){
-                                                BlkACK_stat* t_blkack_stat = new BlkACK_stat(pre_client_addr + t_addr2,this);
-                                                mBlkACKs[pre_client_addr + t_addr2]=t_blkack_stat;
-                                        }
-
-                                        mBlkACKs[pre_client_addr + t_addr2]->add_ACK_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str()));
-                                }
-                        }else{
-                                if(mBlkACKs.find(mAddr + t_addr2) == mBlkACKs.end()){
-                                        BlkACK_stat* t_blkack_stat = new BlkACK_stat(mAddr + t_addr2,this);
-                                        mBlkACKs[mAddr + t_addr2]=t_blkack_stat;
-                                }
-                                mBlkACKs[mAddr + t_addr2]->add_ACK_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str()));
-                        }
+                else if(is_CTS(*it)||is_ACK(*it)){
+                        if(rts_blkack_stat != NULL)
+                                rts_blkack_stat->addRTS_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str()));
                 }
+
+                //////////////////////////////////////////////////////////////////////////////////////////
+                /* Count the airtime contributed by airtime */
+                /*         The result looks random, so we finally decided not to use it. */
+                /* else if(is_ACK(*it)){ */
+                /*         string t_addr2 = (*it)->get_field(Line_cont::F_RA); */
+                /*         /1* cout<<"Find ACK "; *1/ */
+                /*         /1* (*it)->print_fields(); *1/ */
+                /*         if(t_addr2 == mAddr){ */
+                /*                 if(pre_client_addr.length()>0){ */
+                /*                         if(mBlkACKs.find(pre_client_addr + t_addr2) == mBlkACKs.end()){ */
+                /*                                 BlkACK_stat* t_blkack_stat = new BlkACK_stat(pre_client_addr + t_addr2,this); */
+                /*                                 mBlkACKs[pre_client_addr + t_addr2]=t_blkack_stat; */
+                /*                         } */
+
+                /*                         mBlkACKs[pre_client_addr + t_addr2]->add_ACK_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str())); */
+                /*                 } */
+                /*         }else{ */
+                /*                 if(mBlkACKs.find(mAddr + t_addr2) == mBlkACKs.end()){ */
+                /*                         BlkACK_stat* t_blkack_stat = new BlkACK_stat(mAddr + t_addr2,this); */
+                /*                         mBlkACKs[mAddr + t_addr2]=t_blkack_stat; */
+                /*                 } */
+                /*                 mBlkACKs[mAddr + t_addr2]->add_ACK_airtime(1000*atof((*it)->get_field(Line_cont::F_TIME_DELTA).c_str())); */
+                /*         } */
+                /* } */
+                //////////////////////////////////////////////////////////////////////////////////////////
         }
 }
 
@@ -1006,6 +1013,7 @@ Client_stat::Client_stat(string addr, AP_stat* ap)
         mMPDU_num = 0;
         mTime_delta_median = 0.0;
         mAMPDU_max = 0.0;
+        mAMPDU_mean = 0.0;
         mRate = 0.0;
         mBlkACKs_client.clear();
         mRSSI = -100;
@@ -1013,12 +1021,13 @@ Client_stat::Client_stat(string addr, AP_stat* ap)
 
 void Client_stat::report_client()
 {
-        printf("%-5s %10.6f %-16s %-16s %4d %6.3f %6.3f %6.3f %6.3f %6.3f %4d\n",
+        printf("%-5s %10.6f %-16s %-16s %4d %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %4d\n",
                         "CLIENT", //level
                         mAP_stat->getTime(), //level
                         mAddr.c_str(),  //client addr
                         mAP_stat->getAddr().c_str(),  //AP addr
                         mMPDU_num,//number of MPDUs
+                        mAMPDU_mean, //AI_mean
                         mLoss,  //mean of loss per A-MPDU
                         mTime_delta_median,  //median blockACK gap
                         getAirTime_client(),  //minimum blockACK gap
@@ -1055,6 +1064,8 @@ void Client_stat::calc_stats()
                 ////////////////////////////////////////////
                 //The code here is quite ulgy. The reason is the dependency between each of the
                 //functions that setSize need the A-MPDU mean from calc_stats, and calc_rate requires setSize finished.
+                //The intuition of this block of code is to find the data link if there are two links associated with a client.
+                //The data link is the one with higher AI_mean
                 if(mBlkACKs_client.size() == 2){
 
                         if(mBlkACKs_client[0]->getAMPDU_mean() > mBlkACKs_client[1]->getAMPDU_mean()){
@@ -1064,6 +1075,7 @@ void Client_stat::calc_stats()
                                 mBlkACKs_client[1]->calc_rate();
                                 mRate = mBlkACKs_client[0]->getRate_flow();
                                 mRSSI = mBlkACKs_client[0]->getRSSI_flow();
+                                mAMPDU_mean = mBlkACKs_client[0]->getAMPDU_mean_flow();
                                 
                                 /* cout<<mBlkACKs_client[0]->getAddr()<<" haha get MTU with "<<mBlkACKs_client[0]->getAMPDU_mean()<<" to "<<mBlkACKs_client[1]->getAMPDU_mean()<<endl; */
                         }else{
@@ -1074,6 +1086,7 @@ void Client_stat::calc_stats()
                                 mBlkACKs_client[0]->calc_rate();
                                 mRate = mBlkACKs_client[1]->getRate_flow();
                                 mRSSI = mBlkACKs_client[1]->getRSSI_flow();
+                                mAMPDU_mean = mBlkACKs_client[1]->getAMPDU_mean_flow();
                                 /* cout<<mBlkACKs_client[1]->getAddr()<<" haha get MTU with "<<mBlkACKs_client[1]->getAMPDU_mean()<<" to "<<mBlkACKs_client[0]->getAMPDU_mean()<<endl; */
                         }
                 }
@@ -1082,6 +1095,7 @@ void Client_stat::calc_stats()
                         mBlkACKs_client[0]->calc_rate();
                         mRate = mBlkACKs_client[0]->getRate_flow();
                         mRSSI = mBlkACKs_client[0]->getRSSI_flow();
+                        mAMPDU_mean = mBlkACKs_client[0]->getAMPDU_mean_flow();
                         /* cout<<mBlkACKs_client[0]->getAddr()<<" haha get MTU by default"<<endl; */
 
                 }
@@ -1251,6 +1265,9 @@ bool BlkACK_stat::parse_AMPDU()
 
         /* The variable name mBAMPDU means AMPDU based on BlkACK. */
         mAMPDU_tuple.push_back(make_tuple(t_len,t_len_miss,mACKs.back()->RSSI,time_delta,if_continue));
+        /* Compensate the window border loss */
+        if(mAMPDU_tuple.size() == 1)
+                mAMPDU_tuple.push_back(make_tuple(t_len,t_len_miss,mACKs.back()->RSSI,time_delta,if_continue));
 
         report_pkt();
 
@@ -1325,8 +1342,8 @@ void BlkACK_stat::calc_stats()
                 /* The part is quite essential to our research: calculating the minimum of the Block-ACK gap */
                 percent_N = 1;
                 /* Adjust the percentile to take as valid gap based on 802.11ac or 802.11n */
-                float gap_cap = 0.05;
-                if(mFREQ > 0 && mFREQ < 5000) gap_cap = 0.2;
+                float gap_cap = X_PERCENTILE_5;
+                if(mFREQ > 0 && mFREQ < 5000) gap_cap = X_PERCENTILE_24;
                 while(percent_N < n1*gap_cap && !percentile_q1.empty()){
                         /* cout<<"haha pop min gap "<<percentile_q.top()<<endl; */
                         percentile_q1.pop();
@@ -1448,6 +1465,10 @@ void BlkACK_stat::clean_mem_flow()
 int BlkACK_stat::getRSSI_flow()
 {
         return mRSSI_mean;     
+}
+float BlkACK_stat::getAMPDU_mean_flow()
+{
+        return mAMPDU_mean;
 }
 float BlkACK_stat::getRate_flow()
 {
