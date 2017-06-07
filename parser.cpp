@@ -1436,7 +1436,7 @@ float BlkACK_stat::getUtl_flow()
 void BlkACK_stat::report_flow()
 {
         
-        printf("%-5s %10.6f %-16s %4d %6.3f %4d %6.3f %6.3f %6.3f %6.3f %6.3f %4d\n",
+        printf("%-5s %10.6f %-16s %4d %6.3f %4d %6.3f %6.3f %6.3f %6.3f %6.3f %4d %4d\n",
                         "FLOW", //level
                         mAP_stat->getTime(), //level
                         mAddr.c_str(),  //addr
@@ -1448,7 +1448,8 @@ void BlkACK_stat::report_flow()
                         mAirtime,  //minimum blockACK gap
                         mUtil,  //Utilization
                         mRate,  //Transmission
-                        mRSSI_mean //RSSI
+                        mRSSI_mean, //RSSI
+                        getPktSize() //Infered Packet Size
               );
         /* this->clean_mem_flow(); */
 }

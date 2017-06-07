@@ -24,7 +24,9 @@
 #define SCRIPT "/home/netscale/A-MPDU/src/Passive/scripts/parse_pcap.sh "
 #define OVERHEAD_PREAMBLE_S 28
 #define OVERHEAD_PREAMBLE_L 40
-#define DWELL_TIME 40
+//////////The dwell time setting///////////////
+#define DWELL_TIME 20
+///////////////////////////////////////////////
 #define SLOT_TIME 9
 #define MAX_TRANS_TIME 4 //in millisecond
 //Let's put the weight to zero for now.
@@ -39,8 +41,8 @@
 #define ACK_LEN 134
 
 /* The percentile parameter to compute transmission rate */
-#define X_PERCENTILE_5 0.05
-#define X_PERCENTILE_24 0.20
+#define X_PERCENTILE_5 0.10
+#define X_PERCENTILE_24 0.10
 
 /* #define X_PERCENTILE_5 0.25 */
 /* #define X_PERCENTILE_24 0.05 */
