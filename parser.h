@@ -41,8 +41,8 @@
 #define ACK_LEN 134
 
 /* The percentile parameter to compute transmission rate */
-#define X_PERCENTILE_5 0.10
-#define X_PERCENTILE_24 0.10
+#define X_PERCENTILE_5 0.5
+#define X_PERCENTILE_24 0.25
 
 /* #define X_PERCENTILE_5 0.25 */
 /* #define X_PERCENTILE_24 0.05 */

@@ -421,7 +421,7 @@ void Window_data::report_channel()
         printf("%d %-16s ",
                         mDwell_time,mProber.c_str());
 #endif
-        printf("%-5s %10.6f %4d %4d %4d %6.3f %6.3f %6.3f\n",
+        printf("%-5s %10.6f %4d %4d %4d %6.3f %6.3f %6.3f %4d\n",
                         "CHAN", //level
                         mTime, //time
                         mN_AP,//AP number
@@ -429,8 +429,8 @@ void Window_data::report_channel()
                         mMPDU_num,//number of MPDUs
                         mLoss,  //mean of loss per A-MPDU
                         mAirtime,  //Airtime
-                        mUtil  //Utilization
-                        /* mLines.size() */
+                        mUtil,  //Utilization
+                        mLines.size() //control pkts
               );
         /* this->clean_mem_chan(); */
 }
